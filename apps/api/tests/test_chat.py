@@ -6,9 +6,10 @@ from typing import Any
 import anthropic
 import httpx2
 import pytest
-from anthropic.types import MessageParam
+from anthropic.types import Message, MessageParam
 from fastapi.testclient import TestClient
 
+from chatbotator.chat.reply import ReplyResult
 from chatbotator.main import app
 from chatbotator.routes import chat as chat_route
 
@@ -20,9 +21,16 @@ def fake_model(monkeypatch: pytest.MonkeyPatch) -> list[list[MessageParam]]:
     """Replaces the model call with a fake that records what it was sent."""
     calls: list[list[MessageParam]] = []
 
-    def fake_generate_reply(messages: list[MessageParam]) -> str:
+    def fake_generate_reply(messages: list[MessageParam]) -> ReplyResult:
         calls.append(messages)
-        return "Fake reply"
+        # model_construct() builds an empty Message without validation: the
+        # route only reads `.text`.
+        return ReplyResult(
+            text="Fake reply",
+            request={},
+            response=Message.model_construct(),
+            latency_s=0.0,
+        )
 
     # Patch the name where the route looks it up, not where it is defined.
     monkeypatch.setattr(chat_route, "generate_reply", fake_generate_reply)
@@ -63,7 +71,7 @@ def test_rejects_invalid_conversations(
 
 
 def fail_with(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
-    def failing_generate_reply(messages: list[MessageParam]) -> str:
+    def failing_generate_reply(messages: list[MessageParam]) -> ReplyResult:
         raise error
 
     monkeypatch.setattr(chat_route, "generate_reply", failing_generate_reply)

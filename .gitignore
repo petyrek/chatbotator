@@ -11,3 +11,6 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+# Eval traces hold full requests and responses; only summary.json is committed.
+evals/results/*/traces/
+evals/results/*/trace.md

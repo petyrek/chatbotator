@@ -25,6 +25,8 @@ dev = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
+# `ruff format` keeps code within the line length; long string literals are allowed.
+ignore = ["E501"]
 
 [tool.mypy]
 strict = true

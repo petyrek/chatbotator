@@ -46,7 +46,7 @@ def to_model_message(message: ChatMessage) -> MessageParam:
 def chat(request: ChatRequest) -> ChatResponse:
     history = [to_model_message(message) for message in request.messages]
     try:
-        reply = generate_reply(history)
+        reply = generate_reply(history).text
     except anthropic.AuthenticationError as error:
         logger.error("Model call rejected: check ANTHROPIC_API_KEY in .env")
         raise HTTPException(
