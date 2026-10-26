@@ -93,6 +93,15 @@
   align-self: flex-end;
   border-bottom-right-radius: 3px;
 }
+.message.pending {
+  color: #6f7a68;
+  font-style: italic;
+}
+.chat-error {
+  margin: 0 13px 8px;
+  font-size: 11px;
+  color: #a3412a;
+}
 .chat-form {
   margin: 0 13px;
   display: flex;

@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { sendChat, type ChatMessage } from "../../api";
 import "./chat.css";
 
-type Message = { id: string; role: "assistant" | "user"; text: string };
+// A chat message plus a stable id for React's `key`.
+type Message = ChatMessage & { id: string };
+
+// Shown in the UI only. It is not part of the conversation sent to the API,
+// which must start with a user message.
+const GREETING =
+  "Hi! I'm the TrailSupply assistant. Ask me about our gear, shipping, returns or warranty.";
 
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      text: "Hi there. This is the chat preview. AI answers are your next exercise; the published policies are ready in the help center.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -22,30 +25,45 @@ export function ChatWidget() {
   }, [open]);
   useEffect(() => {
     if (open) bottom.current?.scrollIntoView({ block: "nearest" });
-  }, [messages, open]);
+  }, [messages, pending, open]);
 
   function close() {
     setOpen(false);
     launcher.current?.focus();
   }
 
-  function send(event: FormEvent) {
+  async function send(event: FormEvent) {
     event.preventDefault();
     const question = text.trim();
-    if (!question) return;
-    // YOUR EXERCISE: replace this local preview with a call to your API
-    // (add the request function to src/api.ts).
-    setMessages((current) => [
-      ...current,
-      { id: crypto.randomUUID(), role: "user", text: question },
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: "Preview only — no model or retrieval is connected yet. Open the help center to read the store policies.",
-      },
-    ]);
+    if (!question || pending) return;
+
+    const conversation: Message[] = [
+      ...messages,
+      { id: crypto.randomUUID(), role: "user", content: question },
+    ];
+    setMessages(conversation);
     setText("");
-    input.current?.focus();
+    setError(null);
+    setPending(true);
+
+    try {
+      const reply = await sendChat(
+        conversation.map(({ role, content }) => ({ role, content })),
+      );
+      setMessages([
+        ...conversation,
+        { id: crypto.randomUUID(), role: "assistant", content: reply },
+      ]);
+    } catch (err) {
+      // Take the unanswered question out of the conversation and put it back
+      // in the input, so trying again is one click.
+      setMessages(messages);
+      setText(question);
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setPending(false);
+      input.current?.focus();
+    }
   }
 
   return (
@@ -64,7 +82,7 @@ export function ChatWidget() {
             <span className="chat-symbol">↗</span>
             <div>
               <h2 id="chat-title">TrailSupply support</h2>
-              <p>Demo chat · AI not connected</p>
+              <p>AI assistant · answers can be wrong</p>
             </div>
             <button
               className="icon-button"
@@ -80,13 +98,22 @@ export function ChatWidget() {
             aria-label="Chat messages"
             aria-live="polite"
           >
+            <div className="message assistant">{GREETING}</div>
             {messages.map((message) => (
               <div key={message.id} className={"message " + message.role}>
-                {message.text}
+                {message.content}
               </div>
             ))}
+            {pending && (
+              <div className="message assistant pending">Thinking…</div>
+            )}
             <div ref={bottom} />
           </div>
+          {error && (
+            <p className="chat-error" role="alert">
+              {error}
+            </p>
+          )}
           <form className="chat-form" onSubmit={send}>
             <label className="sr-only" htmlFor="chat-message">
               Your message
@@ -101,7 +128,7 @@ export function ChatWidget() {
             />
             <button
               type="submit"
-              disabled={!text.trim()}
+              disabled={pending || !text.trim()}
               aria-label="Send message"
             >
               ↑

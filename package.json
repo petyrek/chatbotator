@@ -10,10 +10,10 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "setup": "npm install && uv sync --directory apps/api",
+    "setup": "npm install && uv sync --directory apps/api && node scripts/ensure-env.mjs",
     "dev": "node scripts/dev.mjs",
     "dev:web": "npm run dev --workspace @chatbotator/web",
-    "dev:api": "uv run --directory apps/api uvicorn chatbotator.main:app --reload --host 127.0.0.1 --port 3001",
+    "dev:api": "uv run --directory apps/api uvicorn chatbotator.main:app --reload --env-file ../../.env --host 127.0.0.1 --port 3001",
     "build": "npm run build --workspace @chatbotator/web",
     "typecheck": "npm run typecheck --workspace @chatbotator/web && uv run --directory apps/api mypy",
     "test": "uv run --directory apps/api pytest",
