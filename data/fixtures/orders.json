@@ -1,0 +1,70 @@
+{
+  "referenceDate": "2026-10-26",
+  "note": "Synthetic snapshots. Use referenceDate as the evaluation clock; do not infer identity or eligibility from browser selection.",
+  "orders": [
+    {
+      "id": "TS-1001",
+      "customerId": "customer-alex",
+      "status": "delivered",
+      "deliveredAt": "2026-10-15",
+      "items": [
+        {
+          "productId": "alpine-24",
+          "quantity": 1,
+          "unitPrice": 89,
+          "condition": "unused",
+          "tagsAttached": true
+        }
+      ],
+      "currency": "EUR"
+    },
+    {
+      "id": "TS-1002",
+      "customerId": "customer-alex",
+      "status": "delivered",
+      "deliveredAt": "2026-09-01",
+      "items": [
+        {
+          "productId": "roam-750",
+          "quantity": 1,
+          "unitPrice": 29,
+          "condition": "used",
+          "tagsAttached": false
+        }
+      ],
+      "currency": "EUR"
+    },
+    {
+      "id": "TS-1003",
+      "customerId": "customer-sam",
+      "status": "delivered",
+      "deliveredAt": "2026-10-20",
+      "items": [
+        {
+          "productId": "ridge-2",
+          "quantity": 1,
+          "unitPrice": 189,
+          "condition": "unused",
+          "tagsAttached": true
+        }
+      ],
+      "currency": "EUR"
+    },
+    {
+      "id": "TS-1004",
+      "customerId": "customer-alex",
+      "status": "processing",
+      "deliveredAt": null,
+      "items": [
+        {
+          "productId": "ridge-2",
+          "quantity": 1,
+          "unitPrice": 189,
+          "condition": "unused",
+          "tagsAttached": true
+        }
+      ],
+      "currency": "EUR"
+    }
+  ]
+}

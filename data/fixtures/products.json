@@ -1,0 +1,39 @@
+[
+  {
+    "id": "alpine-24",
+    "name": "Alpine 24",
+    "category": "Daypack",
+    "price": 89,
+    "currency": "EUR",
+    "description": "A comfortable 24-litre pack for the long way home.",
+    "details": ["24 L capacity", "Recycled ripstop shell", "Padded back panel"],
+    "kind": "pack",
+    "color": "#bd673f"
+  },
+  {
+    "id": "ridge-2",
+    "name": "Ridge Two",
+    "category": "Two-person tent",
+    "price": 189,
+    "currency": "EUR",
+    "description": "A little shelter. A whole lot of possibility.",
+    "details": [
+      "Two-person capacity",
+      "Double-wall construction",
+      "2.4 kg packed weight"
+    ],
+    "kind": "tent",
+    "color": "#b7ae76"
+  },
+  {
+    "id": "roam-750",
+    "name": "Roam 750",
+    "category": "Insulated bottle",
+    "price": 29,
+    "currency": "EUR",
+    "description": "Your everyday companion, from desk to trail.",
+    "details": ["750 ml capacity", "Stainless steel", "Leak-resistant lid"],
+    "kind": "bottle",
+    "color": "#77938c"
+  }
+]
