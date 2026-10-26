@@ -102,6 +102,14 @@
   font-size: 11px;
   color: #a3412a;
 }
+.chat-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+}
 .chat-form {
   margin: 0 13px;
   display: flex;

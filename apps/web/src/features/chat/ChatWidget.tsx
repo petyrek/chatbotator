@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { sendChat, type ChatMessage } from "../../api";
+import { MAX_CHAT_MESSAGES, sendChat, type ChatMessage } from "../../api";
 import "./chat.css";
 
 // A chat message plus a stable id for React's `key`.
@@ -27,6 +27,15 @@ export function ChatWidget() {
     if (open) bottom.current?.scrollIntoView({ block: "nearest" });
   }, [messages, pending, open]);
 
+  // Each exchange adds two messages; stop before the API would reject the next one.
+  const conversationFull = messages.length + 1 > MAX_CHAT_MESSAGES;
+
+  function startNewConversation() {
+    setMessages([]);
+    setError(null);
+    input.current?.focus();
+  }
+
   function close() {
     setOpen(false);
     launcher.current?.focus();
@@ -35,7 +44,7 @@ export function ChatWidget() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const question = text.trim();
-    if (!question || pending) return;
+    if (!question || pending || conversationFull) return;
 
     const conversation: Message[] = [
       ...messages,
@@ -56,9 +65,10 @@ export function ChatWidget() {
       ]);
     } catch (err) {
       // Take the unanswered question out of the conversation and put it back
-      // in the input, so trying again is one click.
+      // in the input, so trying again is one click (unless a new draft was typed
+      // while waiting).
       setMessages(messages);
-      setText(question);
+      setText((draft) => (draft.trim() ? draft : question));
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setPending(false);
@@ -109,6 +119,18 @@ export function ChatWidget() {
             )}
             <div ref={bottom} />
           </div>
+          {conversationFull && (
+            <p className="chat-error">
+              This conversation has reached its length limit.{" "}
+              <button
+                type="button"
+                className="chat-link"
+                onClick={startNewConversation}
+              >
+                Start a new conversation
+              </button>
+            </p>
+          )}
           {error && (
             <p className="chat-error" role="alert">
               {error}
@@ -128,7 +150,7 @@ export function ChatWidget() {
             />
             <button
               type="submit"
-              disabled={pending || !text.trim()}
+              disabled={pending || conversationFull || !text.trim()}
               aria-label="Send message"
             >
               ↑

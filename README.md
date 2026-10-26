@@ -4,8 +4,9 @@ A hands-on business AI engineering project: a support assistant for **TrailSuppl
 
 ## Starter status
 
-- React/TypeScript storefront with three products, a Markdown-backed help center, and an honest chat preview.
-- Python/FastAPI API with a health endpoint and a placeholder chat endpoint.
+- React/TypeScript storefront with three products, a Markdown-backed help center, and a chat widget.
+- Python/FastAPI API whose `POST /api/chat` answers with Claude Haiku 5.5 (no policy documents yet, so it declines policy questions).
+- An eval suite (`npm run eval`) with an LLM judge and step-by-step traces.
 - Synthetic product/customer/order fixtures and draft policies.
 - AI integration and business behavior are intentionally unimplemented for the learning exercises.
 

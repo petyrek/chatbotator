@@ -26,7 +26,9 @@ friendly."""
 
 # One client for the whole app: it keeps a pool of HTTP connections open.
 # It reads ANTHROPIC_API_KEY from the environment (loaded from .env at startup).
-client = Anthropic()
+# The SDK defaults (600 s timeout, 2 retries) suit batch jobs, not a chat where
+# someone is waiting: give up after 30 s and retry once (60 s at most).
+client = Anthropic(timeout=30.0, max_retries=1)
 
 
 @dataclass(frozen=True)

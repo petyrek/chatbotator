@@ -17,6 +17,13 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 type ChatRequest = { messages: ChatMessage[] };
 type ChatResponse = { reply: string };
 
+// The longest conversation the API accepts (max_length in ChatRequest).
+export const MAX_CHAT_MESSAGES = 50;
+
+// The API gives up on the model after 30 s and retries once, so 65 s is enough
+// for its worst case; after that, stop waiting.
+const CHAT_TIMEOUT_MS = 65_000;
+
 // Sends the whole conversation (the API is stateless) and returns the reply.
 // Throws an Error whose message is safe to show to the customer.
 export async function sendChat(messages: ChatMessage[]): Promise<string> {
@@ -26,8 +33,14 @@ export async function sendChat(messages: ChatMessage[]): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages } satisfies ChatRequest),
+      signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error(
+        "The assistant took too long to answer. Please try again.",
+      );
+    }
     throw new Error("Can't reach the assistant. Check your connection.");
   }
   if (!response.ok) {

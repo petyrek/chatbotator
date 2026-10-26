@@ -17,9 +17,11 @@ Refunds are simulated. Customer identities are seeded; authorization is still en
 
 ## Next step
 
-1. Review `data/knowledge/` and `data/fixtures/` (the fixtures README explains what each order tests).
-2. Write about ten evaluation cases: see `evals/README.md`.
-3. Choose a provider, model and budget, then make your first model call behind `POST /api/chat`.
+Done so far: eval cases (dev and held-out), Claude Haiku 5.5 behind `POST /api/chat` with the chat widget connected, and an eval runner with traces. Baseline without documents: 1/10 dev cases pass.
+
+1. Retrieval: split `data/knowledge/` into chunks with IDs, retrieve the relevant ones for each question, and answer from them with citations.
+2. Grade citations in code against each case's `sources`, and give the judge the retrieved passages so it can check that claims are supported.
+3. Calibrate the judge: grade a small sample of replies yourself and compare.
 
 ## Python you'll meet
 

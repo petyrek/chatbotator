@@ -14,10 +14,14 @@ router = APIRouter()
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1, max_length=4000)
+    # Long enough for any model reply (max_tokens 4096 is roughly 16k characters),
+    # since earlier replies come back in later requests. The widget limits what
+    # customers type to 1000 characters.
+    content: str = Field(min_length=1, max_length=20_000)
 
 
 class ChatRequest(BaseModel):
+    # The widget offers "Start a new conversation" before reaching this limit.
     messages: list[ChatMessage] = Field(min_length=1, max_length=50)
 
     @field_validator("messages")
@@ -46,7 +50,7 @@ def to_model_message(message: ChatMessage) -> MessageParam:
 def chat(request: ChatRequest) -> ChatResponse:
     history = [to_model_message(message) for message in request.messages]
     try:
-        reply = generate_reply(history).text
+        result = generate_reply(history)
     except anthropic.AuthenticationError as error:
         logger.error("Model call rejected: check ANTHROPIC_API_KEY in .env")
         raise HTTPException(
@@ -60,4 +64,12 @@ def chat(request: ChatRequest) -> ChatResponse:
     except anthropic.APIError as error:
         logger.exception("Model call failed")
         raise HTTPException(502, "The assistant is unavailable right now.") from error
-    return ChatResponse(reply=reply)
+
+    # The call succeeded, but the reply may still be unusable: cut off at
+    # max_tokens, refused, or empty. Never show half an answer as a success.
+    if result.response.stop_reason != "end_turn" or not result.text.strip():
+        logger.warning("Incomplete reply (stop_reason=%s)", result.response.stop_reason)
+        raise HTTPException(
+            502, "The assistant couldn't finish its answer. Please try again."
+        )
+    return ChatResponse(reply=result.text)

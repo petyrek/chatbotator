@@ -16,6 +16,13 @@ from chatbotator.routes import chat as chat_route
 client = TestClient(app)
 
 
+def fake_result(text: str, stop_reason: str = "end_turn") -> ReplyResult:
+    # model_construct() builds a Message without validation; the route only
+    # reads its stop_reason.
+    response = Message.model_construct(stop_reason=stop_reason)
+    return ReplyResult(text=text, request={}, response=response, latency_s=0.0)
+
+
 @pytest.fixture
 def fake_model(monkeypatch: pytest.MonkeyPatch) -> list[list[MessageParam]]:
     """Replaces the model call with a fake that records what it was sent."""
@@ -23,14 +30,7 @@ def fake_model(monkeypatch: pytest.MonkeyPatch) -> list[list[MessageParam]]:
 
     def fake_generate_reply(messages: list[MessageParam]) -> ReplyResult:
         calls.append(messages)
-        # model_construct() builds an empty Message without validation: the
-        # route only reads `.text`.
-        return ReplyResult(
-            text="Fake reply",
-            request={},
-            response=Message.model_construct(),
-            latency_s=0.0,
-        )
+        return fake_result("Fake reply")
 
     # Patch the name where the route looks it up, not where it is defined.
     monkeypatch.setattr(chat_route, "generate_reply", fake_generate_reply)
@@ -105,3 +105,40 @@ def test_unreachable_model_is_a_bad_gateway(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert response.status_code == 502
     assert response.json() == {"detail": "The assistant is unavailable right now."}
+
+
+@pytest.mark.parametrize(
+    ("text", "stop_reason"),
+    [
+        ("Our return window is", "max_tokens"),  # cut off mid-sentence
+        ("", "refusal"),  # the model declined
+        ("   ", "end_turn"),  # finished, but said nothing
+    ],
+)
+def test_incomplete_reply_is_not_a_success(
+    monkeypatch: pytest.MonkeyPatch, text: str, stop_reason: str
+) -> None:
+    monkeypatch.setattr(
+        chat_route, "generate_reply", lambda messages: fake_result(text, stop_reason)
+    )
+
+    response = client.post("/api/chat", json=HELLO)
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "The assistant couldn't finish its answer. Please try again."
+    }
+
+
+def test_long_assistant_replies_can_be_sent_back(
+    fake_model: list[list[MessageParam]],
+) -> None:
+    conversation = [
+        {"role": "user", "content": "Tell me everything."},
+        {"role": "assistant", "content": "x" * 10_000},  # a long earlier reply
+        {"role": "user", "content": "Thanks!"},
+    ]
+
+    response = client.post("/api/chat", json={"messages": conversation})
+
+    assert response.status_code == 200
