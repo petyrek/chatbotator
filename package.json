@@ -17,9 +17,10 @@
     "build": "npm run build --workspace @chatbotator/web",
     "typecheck": "npm run typecheck --workspace @chatbotator/web && uv run --directory apps/api mypy",
     "test": "uv run --directory apps/api pytest",
-    "lint": "uv run --directory apps/api ruff check",
-    "format": "prettier --write . && uv run --directory apps/api ruff format",
-    "format:check": "prettier --check . && uv run --directory apps/api ruff format --check"
+    "eval": "uv run --directory apps/api --env-file ../../.env python ../../evals/run.py",
+    "lint": "uv run --directory apps/api ruff check . ../../evals",
+    "format": "prettier --write . && uv run --directory apps/api ruff format . ../../evals",
+    "format:check": "prettier --check . && uv run --directory apps/api ruff format --check . ../../evals"
   },
   "devDependencies": {
     "prettier": "3.9.10"
