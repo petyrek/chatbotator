@@ -1,4 +1,4 @@
-import products from "../../../../../data/fixtures/products.json";
+import products from "@data/fixtures/products.json";
 import { Hero } from "./Hero";
 import { ProductCard } from "./ProductCard";
 import "./shop.css";

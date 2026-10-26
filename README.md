@@ -28,34 +28,34 @@ npm run build       # web production build
 npm run format:check
 ```
 
-Read [First look](docs/FIRST-LOOK.md), then begin [the evaluation exercise](evals/README.md). The agreed learning roadmap is in [PLAN.md](PLAN.md).
+Run a single side with `npm run dev:web` or `npm run dev:api`. `npm run format` fixes formatting for both.
+
+Read [First look](docs/FIRST-LOOK.md), then the roadmap in [PLAN.md](PLAN.md), then begin [the evaluation exercise](evals/README.md).
 
 ## Structure
 
 ```text
 apps/web/src/
-  app/               App shell, hash routing, API health hook
-  components/        Header, Footer
+  api.ts             Every call from the web app to the API
+  app/               App shell: header, footer, hash routing, health check
   features/shop/     Hero, product grid
   features/help/     Help center and Markdown renderer
   features/chat/     Chat widget (connect it to /api/chat)
   styles/global.css  Tokens, resets, shared typography
 
 apps/api/src/chatbotator/
-  main.py            FastAPI app factory
-  config.py          Server-side settings (credentials go here)
+  main.py            Creates the FastAPI app
   routes/            Thin HTTP handlers: health, chat
-  chat/              M1 — model client, prompts, conversation
-  knowledge/         M1 — ingestion, chunking, retrieval, citations
-  orders/            M2 — order access, ownership, eligibility rules
-  tools/             M2 — tool schemas, dispatch, model/tool loop
-  refunds/           M3 — proposals, confirmation, idempotent refunds
+  chat/              M1: model client, prompts, conversation
+  knowledge/         M1: ingestion, chunking, retrieval, citations
+                     (M2/M3 packages are yours to design when you get there)
 apps/api/tests/      pytest
+apps/api/README.md   Python for TypeScript developers
 
 data/knowledge/      Shared policy documents
 data/fixtures/       Synthetic store data
 evals/               Your evaluation work
-docs/                Handoff and learning notes
+docs/                First look, journal, assistant handoff
 ```
 
 The API is organized by domain, not by layer. Route handlers stay thin so the eval runner can call domain code directly, without HTTP.

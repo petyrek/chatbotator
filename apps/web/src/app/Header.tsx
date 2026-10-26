@@ -1,6 +1,7 @@
+import type { View } from "./useHashView";
 import "./Header.css";
 
-export function Header({ help }: { help: boolean }) {
+export function Header({ view }: { view: View }) {
   return (
     <>
       <div className="announcement">
@@ -29,10 +30,10 @@ export function Header({ help }: { help: boolean }) {
           TrailSupply<span className="brand-dot">®</span>
         </a>
         <nav aria-label="Main navigation">
-          <a href="#shop" aria-current={!help ? "page" : undefined}>
+          <a href="#shop" aria-current={view === "shop" ? "page" : undefined}>
             Shop the essentials
           </a>
-          <a href="#help" aria-current={help ? "page" : undefined}>
+          <a href="#help" aria-current={view === "help" ? "page" : undefined}>
             Help center
           </a>
         </nav>

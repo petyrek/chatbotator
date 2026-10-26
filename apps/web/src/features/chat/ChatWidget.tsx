@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import "./chat.css";
-type Message = { id: number; role: "assistant" | "user"; text: string };
+
+type Message = { id: string; role: "assistant" | "user"; text: string };
+
 export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 0,
+      id: crypto.randomUUID(),
       role: "assistant",
       text: "Hi there. This is the chat preview. AI answers are your next exercise; the published policies are ready in the help center.",
     },
@@ -14,26 +16,30 @@ export function ChatWidget() {
   const input = useRef<HTMLInputElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (open) input.current?.focus();
   }, [open]);
   useEffect(() => {
     if (open) bottom.current?.scrollIntoView({ block: "nearest" });
   }, [messages, open]);
+
   function close() {
     setOpen(false);
     launcher.current?.focus();
   }
+
   function send(event: FormEvent) {
     event.preventDefault();
     const question = text.trim();
     if (!question) return;
-    // YOUR EXERCISE: replace this local preview with a call to your API.
+    // YOUR EXERCISE: replace this local preview with a call to your API
+    // (add the request function to src/api.ts).
     setMessages((current) => [
       ...current,
-      { id: current.length, role: "user", text: question },
+      { id: crypto.randomUUID(), role: "user", text: question },
       {
-        id: current.length + 1,
+        id: crypto.randomUUID(),
         role: "assistant",
         text: "Preview only — no model or retrieval is connected yet. Open the help center to read the store policies.",
       },
@@ -41,6 +47,7 @@ export function ChatWidget() {
     setText("");
     input.current?.focus();
   }
+
   return (
     <>
       {open && (

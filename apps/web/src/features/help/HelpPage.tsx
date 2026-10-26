@@ -29,7 +29,7 @@ export function HelpPage() {
         </nav>
         <article className="policy-article">
           <h2>{article.title}</h2>
-          <Markdown content={article.content} />
+          <Markdown content={article.body} />
         </article>
       </div>
     </section>

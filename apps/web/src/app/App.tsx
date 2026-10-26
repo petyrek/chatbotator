@@ -1,5 +1,5 @@
-import { Footer } from "../components/Footer";
-import { Header } from "../components/Header";
+import { Footer } from "./Footer";
+import { Header } from "./Header";
 import { ChatWidget } from "../features/chat/ChatWidget";
 import { HelpPage } from "../features/help/HelpPage";
 import { ShopPage } from "../features/shop/ShopPage";
@@ -9,9 +9,10 @@ import { useHashView } from "./useHashView";
 export function App() {
   const view = useHashView();
   const apiStatus = useApiStatus();
-  const help = view === "help";
   return (
     <>
+      {/* The hash is used for page routing, so in-page links move focus
+          manually instead of changing the hash (which would switch pages). */}
       <a
         href="#main"
         className="skip-link"
@@ -22,9 +23,9 @@ export function App() {
       >
         Skip to content
       </a>
-      <Header help={help} />
+      <Header view={view} />
       <main id="main" tabIndex={-1}>
-        {help ? <HelpPage /> : <ShopPage />}
+        {view === "help" ? <HelpPage /> : <ShopPage />}
       </main>
       <Footer apiStatus={apiStatus} />
       <ChatWidget />

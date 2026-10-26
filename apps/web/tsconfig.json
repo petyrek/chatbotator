@@ -8,11 +8,11 @@
     "strict": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "paths": { "@data/*": ["../../data/*"] }
   },
   "include": ["src", "vite.config.ts"]
 }

@@ -1,4 +1,4 @@
-import type products from "../../../../../data/fixtures/products.json";
+import type products from "@data/fixtures/products.json";
 import { ProductArt } from "./ProductArt";
 
 type Product = (typeof products)[number];

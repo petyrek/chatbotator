@@ -1,29 +1,45 @@
-# Business AI Engineering Learning Plan
+# Chatbotator — learning plan
 
-**Project:** Customer-support assistant for a fictional online store.
+**Project:** Customer-support assistant for TrailSupply, a fictional outdoor store.
 **Time budget:** Approximately 24–40 focused hours across 8–10 sessions.
 **Goal:** Personally implement and understand a complete, bounded AI workflow: answer questions, retrieve customer data, propose an action, confirm it, execute it reliably, and evaluate the result.
 
 ## Scope
 
-Use your familiar React/TypeScript stack, one model provider, a small local database, synthetic customers and orders, and a handful of policy documents.
+- **Web:** React/TypeScript in `apps/web` (already built: storefront, help center, chat shell).
+- **API:** Python/FastAPI in `apps/api/src/chatbotator/`, managed with uv and checked with pytest, mypy and ruff. `apps/api/README.md` maps the Python tools to their TypeScript equivalents.
+- **Model:** one provider, called through its official Python SDK.
+- **Data:** a handful of policy documents (`data/knowledge/`), synthetic customers and orders (`data/fixtures/`), and SQLite (Python's built-in `sqlite3`) from Milestone 3.
 
 Implement the model/tool loop yourself using the provider’s SDK. Use AI for explanations and review, while ensuring you can explain and modify the core implementation independently.
 
 Refunds are simulated. Customer identities are seeded; authorization is still enforced.
 
+## Next step
+
+1. Review `data/knowledge/` and `data/fixtures/` (the fixtures README explains what each order tests).
+2. Write about ten evaluation cases: see `evals/README.md`.
+3. Choose a provider, model and budget, then make your first model call behind `POST /api/chat`.
+
+## Python you'll meet
+
+- **Milestone 1:** Pydantic models (a zod schema and a TS type in one), FastAPI request and response models, `pathlib`, sync vs `async` handlers, pytest.
+- **Milestone 2:** `Literal` and union types, raising exceptions vs returning error results, pytest fixtures.
+- **Milestone 3:** `sqlite3`, context managers (`with`), transactions.
+- **Milestone 4:** `time`, `json` and `logging` for traces and measurements.
+
 ## Milestone 1 — Answer with evidence
 
-**Sessions 1–2 · 6–8 hours**
+**Sessions 1–2 · 6–8 hours** · **Code:** `chat/`, `knowledge/`, `routes/chat.py`, `apps/web/src/api.ts`, `evals/`
 
 Build:
 
-- Minimal chat interface and model API connection.
+- Connect the existing chat widget to `POST /api/chat` and make one model call from the API.
 - Import a small collection of policy documents.
 - Split documents into retrievable passages with source metadata.
-- Retrieve relevant passages and generate answers with citations.
+- Retrieve relevant passages and generate answers with citations. Use the simplest retrieval method that meets the done criteria; comparing it with embedding search is deferred.
 - Handle follow-up questions, missing information, and unsupported questions.
-- Create an initial evaluation set.
+- Create an initial evaluation set and a small Python runner that calls the chat code directly (not over HTTP).
 
 Learn:
 
@@ -38,11 +54,11 @@ Done when:
 - [ ] Unsupported questions receive an explicit fallback.
 - [ ] Misleading instructions inside a document do not override application policy.
 - [ ] You can inspect which passages were retrieved.
-- [ ] Repeatable checks cover answerable, unanswerable, follow-up, and adversarial questions.
+- [ ] One command runs the cases in `evals/` and reports which pass, covering answerable, unanswerable, follow-up, and adversarial questions.
 
 ## Milestone 2 — Retrieve customer data and propose an action
 
-**Sessions 3–4 · 6–10 hours**
+**Sessions 3–4 · 6–10 hours** · **Code:** new packages you design (e.g. orders, tools)
 
 Build:
 
@@ -72,7 +88,7 @@ Done when:
 
 ## Milestone 3 — Confirm and execute reliably
 
-**Sessions 5–6 · 6–10 hours**
+**Sessions 5–6 · 6–10 hours** · **Code:** a refunds package you design, plus SQLite
 
 Build:
 
@@ -102,7 +118,7 @@ Done when:
 
 ## Milestone 4 — Measure, diagnose, and improve
 
-**Sessions 7–8 · 6–12 hours**
+**Sessions 7–8 · 6–12 hours** · **Code:** `evals/`, plus tracing in the chat and tool code
 
 Build:
 
@@ -110,7 +126,7 @@ Build:
 - Inspectable records of retrieved passages, model/tool calls, validated arguments, execution results, and errors.
 - Timing, token-usage, and estimated model-cost measurements.
 - A small comparison of two model or retrieval configurations.
-- Reproducible local setup and a concise project README.
+- Update the README so another person can reproduce the setup and results.
 
 Learn:
 
@@ -135,7 +151,7 @@ Done when:
 - Enforce permissions and action rules in application code.
 - Validate model outputs before using them.
 - Keep model calls and retries bounded.
-- Record one design decision and one lesson after each session.
+- Record one design decision and one lesson after each session in `docs/journal.md`.
 - Prefer a working vertical slice over additional frameworks or abstractions.
 
 ## Deferred scope

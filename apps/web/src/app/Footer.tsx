@@ -1,5 +1,11 @@
-import type { ApiStatus } from "../app/useApiStatus";
+import type { ApiStatus } from "../api";
 import "./Footer.css";
+
+const statusText: Record<ApiStatus, string> = {
+  checking: "Checking API…",
+  ready: "API connected",
+  offline: "API offline — storefront still available",
+};
 
 export function Footer({ apiStatus }: { apiStatus: ApiStatus }) {
   return (
@@ -14,11 +20,7 @@ export function Footer({ apiStatus }: { apiStatus: ApiStatus }) {
         <p>No checkout. No real orders or payments.</p>
         <p className="api-status">
           <span className={apiStatus === "ready" ? "ready" : ""} />
-          {apiStatus === "ready"
-            ? "API connected"
-            : apiStatus === "checking"
-              ? "Checking API…"
-              : "API offline — storefront still available"}
+          {statusText[apiStatus]}
         </p>
       </div>
     </footer>

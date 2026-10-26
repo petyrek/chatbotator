@@ -13,6 +13,7 @@ export function Hero() {
           <br />
           Pack light. Take the scenic route.
         </p>
+        {/* Scrolls without changing the hash, which drives page routing. */}
         <a
           className="primary-button"
           href="#essentials"

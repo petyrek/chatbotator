@@ -9,9 +9,9 @@ router = APIRouter()
 class Health(BaseModel):
     status: Literal["ok"]
     service: str
-    aiConnected: bool
 
 
+# The return type annotation doubles as the response schema (see /docs).
 @router.get("/api/health")
 def health() -> Health:
-    return Health(status="ok", service="chatbotator-api", aiConnected=False)
+    return Health(status="ok", service="chatbotator-api")
