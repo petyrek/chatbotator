@@ -4,19 +4,22 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "apps/*"
+    "apps/web"
   ],
   "engines": {
     "node": ">=22.12.0"
   },
   "scripts": {
+    "setup": "npm install && uv sync --directory apps/api",
     "dev": "node scripts/dev.mjs",
     "dev:web": "npm run dev --workspace @chatbotator/web",
-    "dev:api": "npm run dev --workspace @chatbotator/api",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "dev:api": "uv run --directory apps/api uvicorn chatbotator.main:app --reload --host 127.0.0.1 --port 3001",
+    "build": "npm run build --workspace @chatbotator/web",
+    "typecheck": "npm run typecheck --workspace @chatbotator/web && uv run --directory apps/api mypy",
+    "test": "uv run --directory apps/api pytest",
+    "lint": "uv run --directory apps/api ruff check",
+    "format": "prettier --write . && uv run --directory apps/api ruff format",
+    "format:check": "prettier --check . && uv run --directory apps/api ruff format --check"
   },
   "devDependencies": {
     "prettier": "3.9.10"

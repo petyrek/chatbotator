@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import "./chat.css";
 type Message = { id: number; role: "assistant" | "user"; text: string };
 export function ChatWidget() {
   const [open, setOpen] = useState(false);

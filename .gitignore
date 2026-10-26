@@ -6,3 +6,8 @@ dist/
 *.tsbuildinfo
 .DS_Store
 coverage/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

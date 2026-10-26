@@ -1,4 +1,4 @@
-const sources = import.meta.glob<string>("../../../data/knowledge/*.md", {
+const sources = import.meta.glob<string>("../../../../../data/knowledge/*.md", {
   eager: true,
   query: "?raw",
   import: "default",

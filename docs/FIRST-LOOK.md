@@ -5,7 +5,7 @@
 From the repository root:
 
 ```sh
-npm install
+npm run setup
 npm run dev
 ```
 
@@ -32,9 +32,10 @@ No model provider package, credentials, model calls, retrieval, eligibility logi
 
 ## Useful entry points
 
-- apps/web/src/App.tsx — storefront and help center.
-- apps/web/src/ChatWidget.tsx — local-only preview; replace its stub during your exercise.
-- apps/api/src/app.ts — health route and your future chat endpoint.
+- apps/web/src/app/App.tsx — app shell; features live under apps/web/src/features/.
+- apps/web/src/features/chat/ChatWidget.tsx — local-only preview; replace its stub during your exercise.
+- apps/api/src/chatbotator/routes/chat.py — your future chat endpoint (keep it thin).
+- apps/api/src/chatbotator/chat/ and knowledge/ — where your milestone 1 code goes.
 - data/knowledge/ — draft source-of-truth policies; review and change these before writing expected answers.
 - data/fixtures/ — synthetic data for later tool exercises.
 
@@ -42,8 +43,9 @@ No model provider package, credentials, model calls, retrieval, eligibility logi
 
 ```sh
 npm run typecheck
+npm test
 npm run build
 curl http://127.0.0.1:3001/api/health
 ```
 
-The API intentionally uses Node's HTTP server to keep the starter small. You can introduce a framework when a concrete requirement justifies it. No shared package is needed yet.
+The API is Python/FastAPI, managed with uv. Run Python commands from apps/api with `uv run ...` (for example `uv run pytest`). No shared package is needed yet.

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const children = ["@chatbotator/api", "@chatbotator/web"].map((workspace) =>
-  spawn(npm, ["run", "dev", "--workspace", workspace], { stdio: "inherit" }),
+const children = ["dev:api", "dev:web"].map((script) =>
+  spawn(npm, ["run", script], { stdio: "inherit" }),
 );
 let stopping = false;
 function stop(code = 0) {

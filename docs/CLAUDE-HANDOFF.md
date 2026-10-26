@@ -1,5 +1,7 @@
 # Chatbotator — handoff to Claude
 
+> **Update, 26 October 2026 (later):** The scaffold was committed as a baseline (`67e056c`). The Node API was then replaced with **Python/FastAPI** (uv, pytest, mypy, ruff), organized by domain under `apps/api/src/chatbotator/`. The web app was split into `app/`, `components/` and `features/{shop,help,chat}/`. Sections below that describe the Node API or the old file list are historical; `README.md` has the current layout and commands.
+
 Prepared 26 October 2026. Read this alongside `PLAN.md`, `README.md`, `docs/FIRST-LOOK.md`, and the actual source. This is a continuation of an existing learning project, not a request to generate the finished application.
 
 ## Purpose and background
