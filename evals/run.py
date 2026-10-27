@@ -25,11 +25,15 @@ from typing import Any
 import yaml
 from anthropic.types import Message
 from judge import JUDGE_EFFORT, JUDGE_MODEL, JUDGE_PROMPT, Verdict, judge
-from report import render_markdown
+from report import render_markdown, result_line
 
 from chatbotator.chat import reply as bot
 
 EVALS_DIR = Path(__file__).parent
+
+# What the bot can see besides the conversation. Update this when retrieval is
+# added, so every report says which setup produced it.
+BOT_CONTEXT = "system prompt only, no policy documents"
 
 
 # --- Recording ----------------------------------------------------------------
@@ -50,6 +54,7 @@ def run_settings(split: str, cases_file: Path) -> dict[str, Any]:
     """Everything needed to tell later whether two runs are comparable."""
     return {
         "split": split,
+        "bot_context": BOT_CONTEXT,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "git_commit": git("rev-parse", "--short", "HEAD"),
         "uncommitted_changes": bool(git("status", "--porcelain")),
@@ -92,20 +97,24 @@ def grade(case: dict[str, Any], verdict: Verdict, stop_reason: str | None) -> li
     """Returns the reasons the case failed; an empty list means it passed.
     The judge only reports observations; pass/fail is decided here, in code."""
     # If the judge changed the checklist, its verdict can't be trusted at all.
-    if [f.fact for f in verdict.facts] != case["expected_facts"]:
-        raise ValueError("Judge changed the list of expected facts")
-    if [r.rule for r in verdict.must_not] != case["must_not"]:
-        raise ValueError("Judge changed the list of must-not rules")
+    if [c.requirement for c in verdict.required] != case["required"]:
+        raise ValueError("Judge changed the list of required items")
+    if [c.claim for c in verdict.forbidden] != case["forbidden"]:
+        raise ValueError("Judge changed the list of forbidden items")
 
     problems = []
     if stop_reason == "max_tokens":
         problems.append("reply was cut off at max_tokens")
     if verdict.behavior != case["expected_behavior"]:
         problems.append(
-            f"behavior {verdict.behavior}, expected {case['expected_behavior']}"
+            f"behavior: expected {case['expected_behavior']}, got {verdict.behavior}"
         )
-    problems += [f"missing fact: {f.fact}" for f in verdict.facts if not f.present]
-    problems += [f"violated: {r.rule}" for r in verdict.must_not if r.violated]
+    problems += [
+        f"required, not met: {c.requirement}" for c in verdict.required if not c.met
+    ]
+    problems += [
+        f"forbidden, detected: {c.claim}" for c in verdict.forbidden if c.detected
+    ]
     return problems
 
 
@@ -113,9 +122,11 @@ def metrics(case: dict[str, Any], verdict: Verdict) -> dict[str, Any]:
     """Partial credit, reported next to the strict pass/fail."""
     return {
         "behavior_ok": verdict.behavior == case["expected_behavior"],
-        "facts_present": sum(f.present for f in verdict.facts),
-        "facts_total": len(verdict.facts),
-        "violations": sum(r.violated for r in verdict.must_not),
+        "behavior": verdict.behavior,
+        "required_met": sum(c.met for c in verdict.required),
+        "required_total": len(verdict.required),
+        "forbidden_detected": sum(c.detected for c in verdict.forbidden),
+        "forbidden_total": len(verdict.forbidden),
     }
 
 
@@ -154,6 +165,8 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
 
 def summarize(traces: list[dict[str, Any]]) -> dict[str, Any]:
     """Scores per category: strict pass rate plus the partial-credit metrics."""
+    counted = ["behavior_ok", "required_met", "required_total"]
+    counted += ["forbidden_detected", "forbidden_total"]
     rows: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for trace in traces:
         result = trace["result"]
@@ -162,30 +175,34 @@ def summarize(traces: list[dict[str, Any]]) -> dict[str, Any]:
             row["cases"] += 1
             row["errors"] += result["status"] == "error"
             row["passed"] += result["status"] == "passed"
-            if "metrics" in result:
-                m = result["metrics"]
-                row["behavior_ok"] += m["behavior_ok"]
-                row["facts_present"] += m["facts_present"]
-                row["facts_total"] += m["facts_total"]
-                row["violations"] += m["violations"]
+            for name in counted:
+                row[name] += result.get("metrics", {}).get(name, 0)
     ordered = sorted(rows, key=lambda key: (key == "total", key))
     return {key: dict(rows[key]) for key in ordered}
 
 
 def print_summary(scores: dict[str, Any]) -> None:
-    print(
-        f"\n  {'category':<14} {'pass':>6} {'behavior':>9} {'facts':>7} {'violations':>11}"
+    header = (
+        "category",
+        "passed",
+        "behavior",
+        "required met",
+        "forbidden found",
+        "errors",
     )
+    print("\n  {:<14} {:>7} {:>9} {:>13} {:>16} {:>7}".format(*header))
     for category, row in scores.items():
         graded = row["cases"] - row["errors"]
         print(
-            f"  {category:<14} {row['passed']:>2}/{row['cases']:<3}"
-            f" {row.get('behavior_ok', 0):>5}/{graded:<3}"
-            f" {row.get('facts_present', 0):>3}/{row.get('facts_total', 0):<3}"
-            f" {row.get('violations', 0):>7}"
+            "  {:<14} {:>7} {:>9} {:>13} {:>16} {:>7}".format(
+                category,
+                f"{row['passed']}/{row['cases']}",
+                f"{row['behavior_ok']}/{graded}",
+                f"{row['required_met']}/{row['required_total']}",
+                f"{row['forbidden_detected']}/{row['forbidden_total']}",
+                row["errors"],
+            )
         )
-    if scores["total"]["errors"]:
-        print(f"\n  {scores['total']['errors']} case(s) errored; see the traces.")
 
 
 def main() -> None:
@@ -217,11 +234,11 @@ def main() -> None:
             json.dumps(trace, indent=2, ensure_ascii=False) + "\n"
         )
         result = trace["result"]
-        print(f"{result['status'].upper():<6}  {case['id']}  {case['category']}")
+        print(
+            f"{result['status'].upper():<6}  {case['id']}  {case['category']}  {result_line(case, result)}"
+        )
         for problem in result["problems"]:
-            print(f"        {problem}")
-        if result["status"] == "error":
-            print(f"        {result['error'].strip().splitlines()[-1]}")
+            print(f"        - {problem}")
 
     scores = summarize(traces)
     print_summary(scores)

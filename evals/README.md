@@ -16,7 +16,9 @@ Each run gets a folder in `results/`, named by time and split:
 - `traces/<case-id>.json`: the same, as raw JSON (full API requests and responses).
 - `summary.json`: scores and the settings that produced them (models, effort, prompt fingerprints, git commit). Only this file is committed; two runs are comparable only if their prompt fingerprints and judge match.
 
-Scores have a strict **pass** (everything right) plus partial credit: **behavior right**, **facts present** and **violations**. A case that crashes counts as an **error**, not a failure.
+Each case in `trace.md` starts with its purpose, the conversation (earlier assistant turns are marked as fixed test history), and a table of expected vs actual with the judge's quoted evidence; every request and response is folded below.
+
+Scores have a strict **pass** (everything right) plus partial credit: **behavior as expected**, **required met** and **forbidden found**. A case that crashes counts as an **error**, not a failure.
 
 ## Files
 
@@ -34,9 +36,10 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 | `tags`              | list of strings                              | Free labels (topic, feature) for filtering.                                                                                                                                      |
 | `messages`          | list of `{role, content}`                    | The conversation, in the same shape as model APIs. The last message is the user turn being tested. Earlier assistant turns are fixed, so every run starts from the same history. |
 | `expected_behavior` | `answer` · `clarify` · `abstain` · `decline` | What the reply should do overall (see below).                                                                                                                                    |
-| `expected_facts`    | list of strings                              | Small, checkable facts the reply must contain. Not an exact sentence: wording varies between runs.                                                                               |
+| `purpose`           | string                                       | One sentence: what this case checks. Shown first in the report.                                                                                                                  |
+| `required`          | list of strings                              | Things a good reply must state or do. One small claim each, and only what this question needs. Not exact wording: replies vary between runs.                                     |
 | `sources`           | list of `{doc, section}`                     | The passages that support the answer. Empty when the documents don't answer it.                                                                                                  |
-| `must_not`          | list of strings                              | The most important wrong things to avoid: invented policy, promised actions, obeyed injections.                                                                                  |
+| `forbidden`         | list of strings                              | Things the reply must never claim or do: invented policy, promised actions, obeyed injections.                                                                                   |
 
 ### `expected_behavior`
 
@@ -55,7 +58,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 
 ## How the fields get graded
 
-- **By an LLM judge** (`claude-sonnet-5-5`, a different model from the bot, because models grade their own writing kindly): the reply's behaviour, whether each of the `expected_facts` is present, and whether any `must_not` rule is broken. It only reports observations.
+- **By an LLM judge** (`claude-sonnet-5-5`, a different model from the bot, because models grade their own writing kindly): the reply's behaviour, whether each `required` item is met, and whether any `forbidden` item appears. For every item it quotes the words in the reply its decision rests on and explains it in one sentence. It only reports observations.
 - **By code:** pass or fail, from the judge's observations and `expected_behavior`; later, whether citations overlap `sources`.
 
 Before trusting a judge, check its verdicts against your own on a sample, and again whenever the judge prompt changes.
