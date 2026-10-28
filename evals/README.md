@@ -41,6 +41,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 | `required`          | list of strings                              | Things a good reply must state or do. One small claim each, and only what this question needs. Not exact wording: replies vary between runs.                                     |
 | `sources`           | list of `{doc, section}`                     | The passages that support the answer. Empty when the documents don't answer it.                                                                                                  |
 | `forbidden`         | list of strings                              | Things the reply must never claim or do: invented policy, promised actions, obeyed injections.                                                                                   |
+| `extra_documents`   | list of file names (optional)                | Documents from `evals/fixtures/` added after the store's own for this case only, such as one with a planted instruction. They never reach the real app.                          |
 
 ### `expected_behavior`
 

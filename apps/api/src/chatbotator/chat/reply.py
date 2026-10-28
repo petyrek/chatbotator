@@ -7,7 +7,7 @@ from typing import Any
 from anthropic import Anthropic
 from anthropic.types import ContentBlockParam, Message, MessageParam, UserMessageParam
 
-from chatbotator.knowledge.documents import DOCUMENTS, as_search_results
+from chatbotator.knowledge.documents import DOCUMENTS, Document, as_search_results
 
 MODEL = "claude-haiku-5-5"
 MAX_TOKENS = 4096
@@ -64,7 +64,9 @@ class ReplyResult:
     latency_s: float
 
 
-def with_documents(messages: list[MessageParam]) -> list[MessageParam]:
+def with_documents(
+    messages: list[MessageParam], documents: list[Document]
+) -> list[MessageParam]:
     """Attaches the policy documents to the customer's latest message.
 
     The API is stateless, so they are attached again on every request. Earlier
@@ -74,18 +76,20 @@ def with_documents(messages: list[MessageParam]) -> list[MessageParam]:
     if not isinstance(latest["content"], str):
         raise TypeError("The latest message must be plain text")
     content: list[ContentBlockParam] = [
-        *as_search_results(DOCUMENTS),
+        *as_search_results(documents),
         {"type": "text", "text": latest["content"]},
     ]
     with_attachments: UserMessageParam = {"role": "user", "content": content}
     return [*history, with_attachments]
 
 
-def citations_in(response: Message) -> list[Citation]:
+def citations_in(response: Message, documents: list[Document]) -> list[Citation]:
     """Turns the API's citations into the policy lines they point to.
 
     Each citation says which search result (= document) and which content block
-    (= passage) it cites, so we can look up the passage's section.
+    (= passage) it cites, so we can look up the passage's section. A citation
+    only gives positions, so `documents` must be the list that was sent, in the
+    same order.
     """
     citations: list[Citation] = []
     for block in response.content:
@@ -94,7 +98,7 @@ def citations_in(response: Message) -> list[Citation]:
         for cited in block.citations or []:
             if cited.type != "search_result_location":
                 continue
-            document = DOCUMENTS[cited.search_result_index]
+            document = documents[cited.search_result_index]
             passage = document.passages[cited.start_block_index]
             citation = Citation(
                 document.name, document.title, passage.section, cited.cited_text
@@ -104,18 +108,22 @@ def citations_in(response: Message) -> list[Citation]:
     return citations
 
 
-def generate_reply(messages: list[MessageParam]) -> ReplyResult:
+def generate_reply(
+    messages: list[MessageParam], documents: list[Document] = DOCUMENTS
+) -> ReplyResult:
     """Asks the model for the next reply to the conversation so far.
 
     `messages` is the full history, oldest first, ending with the user's latest
-    message. SDK errors (bad key, rate limit, network) are left for the caller.
+    message. `documents` are the store's policies; evals can add others, such as
+    one with a planted instruction. SDK errors (bad key, rate limit, network) are
+    left for the caller.
     """
     # Built once and passed as-is, so what callers log is exactly what was sent.
     request: dict[str, Any] = {
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
         "system": SYSTEM_PROMPT,
-        "messages": with_documents(messages),
+        "messages": with_documents(messages, documents),
         # "summarized" makes thinking blocks carry a readable summary (billed the
         # same as hidden thinking), so eval traces show how the model reasoned.
         # Customers only ever get the text blocks.
@@ -131,7 +139,7 @@ def generate_reply(messages: list[MessageParam]) -> ReplyResult:
     text = "".join(block.text for block in response.content if block.type == "text")
     return ReplyResult(
         text=text,
-        citations=citations_in(response),
+        citations=citations_in(response, documents),
         request=request,
         response=response,
         latency_s=latency_s,

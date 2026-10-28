@@ -17,11 +17,16 @@ Refunds are simulated. Customer identities are seeded; authorization is still en
 
 ## Next step
 
-Done so far: eval cases (dev and held-out), Claude Haiku 5.5 behind `POST /api/chat` with the chat widget connected, and an eval runner with traces. Baseline without documents: 1/10 dev cases pass.
+Milestone 1 is done. The bot gets all four policy documents with every question (measured instead of retrieval; see `docs/journal.md`), cites the lines it uses, and the eval runner grades every dev case, including an instruction planted in a document (case-011).
 
-1. Retrieval: split `data/knowledge/` into chunks with IDs, retrieve the relevant ones for each question, and answer from them with citations.
-2. Grade citations in code against each case's `sources`, and give the judge the retrieved passages so it can check that claims are supported.
-3. Calibrate the judge: grade a small sample of replies yourself and compare.
+Milestone 2, in order:
+
+1. Read `data/fixtures/` (customers, orders, products) and decide which customer the app treats as signed in.
+2. Write a `get_order` tool: its schema, argument validation, and a lookup that only returns the signed-in customer's orders.
+3. Turn the single model call into a bounded tool loop (step limit, timeouts, tool errors returned to the model).
+4. Add eval cases for order questions, including another customer's order.
+
+Carried over to Milestone 4: measure pass rates over repeated runs, check whether the Haiku judge grades like the Sonnet one did, and the bot sometimes stating policy without citing it.
 
 ## Python you'll meet
 
@@ -52,11 +57,11 @@ Learn:
 
 Done when:
 
-- [ ] Answers cite passages that support their claims.
-- [ ] Unsupported questions receive an explicit fallback.
-- [ ] Misleading instructions inside a document do not override application policy.
-- [ ] You can inspect which passages were retrieved.
-- [ ] One command runs the cases in `evals/` and reports which pass, covering answerable, unanswerable, follow-up, and adversarial questions.
+- [x] Answers cite passages that support their claims.
+- [x] Unsupported questions receive an explicit fallback.
+- [x] Misleading instructions inside a document do not override application policy.
+- [x] You can inspect which passages were retrieved.
+- [x] One command runs the cases in `evals/` and reports which pass, covering answerable, unanswerable, follow-up, and adversarial questions.
 
 ## Milestone 2 — Retrieve customer data and propose an action
 

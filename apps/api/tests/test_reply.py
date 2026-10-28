@@ -13,7 +13,7 @@ from anthropic.types import (
 )
 
 from chatbotator.chat import reply
-from chatbotator.knowledge.documents import DOCUMENTS
+from chatbotator.knowledge.documents import DOCUMENTS, Document, Passage
 
 
 def returns_citation(block: int) -> CitationsSearchResultLocation:
@@ -81,3 +81,29 @@ def test_returns_only_the_text_and_the_cited_policy_lines(
     assert result.citations[0].document == "returns.md"
     assert result.citations[0].section == returns.passages[0].section
     assert result.citations[0].quote == "cited line 0"
+
+
+def test_extra_documents_are_sent_after_the_store_and_cited_by_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extra = Document("note.md", "Supplier note", [Passage("Details", "12 pegs.")])
+    cited = CitationsSearchResultLocation.model_construct(
+        type="search_result_location",
+        cited_text="Details: 12 pegs.",
+        search_result_index=len(DOCUMENTS),  # the first document after the store's
+        start_block_index=0,
+        end_block_index=1,
+    )
+    content = [TextBlock.model_construct(type="text", text="12.", citations=[cited])]
+    sent: dict[str, Any] = {}
+    monkeypatch.setattr(reply, "client", fake_client(sent, content))
+
+    result = reply.generate_reply(
+        [{"role": "user", "content": "Pegs?"}], [*DOCUMENTS, extra]
+    )
+
+    *documents, _ = sent["messages"][0]["content"]
+    assert documents[-1]["source"] == "note.md"
+    assert result.citations == [
+        reply.Citation("note.md", "Supplier note", "Details", "Details: 12 pegs.")
+    ]

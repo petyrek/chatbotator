@@ -30,7 +30,7 @@ from report import render_markdown, result_line
 
 from chatbotator.chat import reply as bot
 from chatbotator.chat.reply import Citation
-from chatbotator.knowledge.documents import DOCUMENTS
+from chatbotator.knowledge.documents import DOCUMENTS, Document, parse_document
 from chatbotator.routes.chat import (
     ChatRequest,
     is_complete,
@@ -39,6 +39,9 @@ from chatbotator.routes.chat import (
 )
 
 EVALS_DIR = Path(__file__).parent
+# Documents a case can add to the store's own with `extra_documents`, such as
+# one with a planted instruction. They are never part of the real app.
+FIXTURES_DIR = EVALS_DIR / "fixtures"
 
 # What the bot can see besides the conversation. Update this when retrieval is
 # added, so every report says which setup produced it.
@@ -189,6 +192,16 @@ def metrics(
 # --- Running ------------------------------------------------------------------
 
 
+def documents_for(case: dict[str, Any]) -> list[Document]:
+    """What the bot gets in this case: the store's documents, then any the case
+    adds. The bot and the grounding check both get this same list."""
+    extra = [
+        parse_document(name, (FIXTURES_DIR / name).read_text())
+        for name in case.get("extra_documents", [])
+    ]
+    return [*DOCUMENTS, *extra]
+
+
 def run_case(case: dict[str, Any]) -> dict[str, Any]:
     """Runs one case through every step and records what happened at each."""
     trace: dict[str, Any] = {
@@ -204,7 +217,8 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         # send, converted for the model, and the response body it would get.
         request = ChatRequest.model_validate({"messages": case["messages"]})
         history = [to_model_message(message) for message in request.messages]
-        reply = bot.generate_reply(history)
+        documents = documents_for(case)
+        reply = bot.generate_reply(history, documents)
         trace["api"] = {
             "request": request.model_dump(),
             # The endpoint answers 502 instead of an incomplete reply.
@@ -223,7 +237,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         # Step 3: a second grader checks each statement against the sources (the
         # documents, the bot's instructions and the conversation), and
         # code confirms every supporting quote really exists in them.
-        grounding = check_grounding(case["messages"], reply.text)
+        grounding = check_grounding(case["messages"], reply.text, documents)
         trace["grounding"] = call_record(
             grounding.request, grounding.response, grounding.latency_s
         )

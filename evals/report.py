@@ -359,6 +359,14 @@ def render_case(trace: dict[str, Any], grounding_decides_pass: bool) -> str:
         f"*{case['purpose']}*",
         conversation(case, bot),
     ]
+    if bot and case.get("extra_documents"):
+        parts.append(
+            folded(
+                "Added for this case only, after the store's documents: "
+                + ", ".join(case["extra_documents"]),
+                documents_block(search_results(trace, extra=True)),
+            )
+        )
     if result["status"] == "error":
         parts += ["**Error, so the case was not graded:**", code_block(result["error"])]
     else:
@@ -381,15 +389,22 @@ def render_case(trace: dict[str, Any], grounding_decides_pass: bool) -> str:
 # --- The whole run --------------------------------------------------------------
 
 
-def documents(traces: list[dict[str, Any]]) -> str:
-    """The documents as the bot gets them, numbered the way citations point at
-    them: search_result_index picks the document, start/end_block_index the
-    lines (end exclusive)."""
-    request = next(t["bot"]["request"] for t in traces if t["bot"])
-    blocks = request["messages"][-1]["content"]
+def search_results(
+    trace: dict[str, Any], extra: bool
+) -> list[tuple[int, dict[str, Any]]]:
+    """The documents the bot got in this case, with the search_result_index that
+    citations use: the store's own (extra=False), or the ones this case added."""
+    blocks = trace["bot"]["request"]["messages"][-1]["content"]
     results = [b for b in blocks if b["type"] == "search_result"]
+    added = trace["case"].get("extra_documents", [])
+    return [(i, r) for i, r in enumerate(results) if (r["source"] in added) == extra]
+
+
+def documents_block(results: list[tuple[int, dict[str, Any]]]) -> str:
+    """Numbered the way citations point at them: search_result_index picks the
+    document, start/end_block_index the lines (end exclusive)."""
     lines = []
-    for index, result in enumerate(results):
+    for index, result in results:
         lines.append(f"search_result_index {index} · {result['source']}")
         lines += [
             f"  {i:>2}  {passage['text']}"
@@ -467,7 +482,9 @@ def render_markdown(
         parts.append(
             folded(
                 "Documents (attached to every question, as the bot sees them)",
-                documents(traces),
+                documents_block(
+                    search_results(next(t for t in traces if t["bot"]), extra=False)
+                ),
             )
         )
     return (

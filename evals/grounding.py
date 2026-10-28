@@ -20,7 +20,7 @@ from judge import JUDGE_EFFORT, JUDGE_MODEL
 from pydantic import BaseModel
 
 from chatbotator.chat.reply import SYSTEM_PROMPT
-from chatbotator.knowledge.documents import DOCUMENTS
+from chatbotator.knowledge.documents import DOCUMENTS, Document
 
 GROUNDING_PROMPT = """\
 You check whether a customer support reply is grounded in its sources. You get a
@@ -78,7 +78,7 @@ class GroundingResult:
     latency_s: float
 
 
-def sources() -> dict[str, Any]:
+def sources(documents: list[Document]) -> dict[str, Any]:
     """Exactly what the bot had to go on: the documents and its own instructions."""
     return {
         "policy_documents": [
@@ -86,7 +86,7 @@ def sources() -> dict[str, Any]:
                 "title": document.title,
                 "text": "\n".join(f"{p.section}: {p.text}" for p in document.passages),
             }
-            for document in DOCUMENTS
+            for document in documents
         ],
         "assistant_instructions": SYSTEM_PROMPT,
     }
@@ -100,20 +100,24 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip(" .,;:'\"")
 
 
-SOURCE_TEXT = normalize(json.dumps(sources(), ensure_ascii=False).replace("\\n", " "))
-
-
-def quote_found(quote: str) -> bool:
-    return bool(normalize(quote)) and normalize(quote) in SOURCE_TEXT
+def quote_found(quote: str, sources: dict[str, Any]) -> bool:
+    """Code's check on the grader: does the quote appear in what the bot had
+    (the documents, its instructions and the conversation)?"""
+    source_text = normalize(json.dumps(sources, ensure_ascii=False).replace("\\n", " "))
+    return bool(normalize(quote)) and normalize(quote) in source_text
 
 
 client = Anthropic()
 
 
-def check_grounding(conversation: list[Any], reply: str) -> GroundingResult:
-    # What the customer said counts as a source too: "delivered on 26 September"
-    # supports "today is the last day".
-    material = {"sources": {**sources(), "conversation": conversation}, "reply": reply}
+def check_grounding(
+    conversation: list[Any], reply: str, documents: list[Document] = DOCUMENTS
+) -> GroundingResult:
+    # `documents` are the ones the bot got, including any a case added. What the
+    # customer said counts as a source too: "delivered on 26 September" supports
+    # "today is the last day".
+    given: dict[str, Any] = {**sources(documents), "conversation": conversation}
+    material = {"sources": given, "reply": reply}
     request: dict[str, Any] = {
         "model": JUDGE_MODEL,
         "max_tokens": 8192,
@@ -142,7 +146,7 @@ def check_grounding(conversation: list[Any], reply: str) -> GroundingResult:
             supporting_quote=s.supporting_quote,
             explanation=s.explanation,
             grader_says_supported=s.supported,
-            quote_found=quote_found(s.supporting_quote),
+            quote_found=quote_found(s.supporting_quote, given),
         )
         for s in response.parsed_output.statements
     ]
