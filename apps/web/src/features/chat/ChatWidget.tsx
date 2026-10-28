@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { MAX_CHAT_MESSAGES, sendChat, type ChatMessage } from "../../api";
+import {
+  MAX_CHAT_MESSAGES,
+  sendChat,
+  type ChatMessage,
+  type Citation,
+} from "../../api";
 import "./chat.css";
 
-// A chat message plus a stable id for React's `key`.
-type Message = ChatMessage & { id: string };
+// A chat message plus a stable id for React's `key`, and for assistant replies
+// the policy lines they cite (shown under the reply, never sent back).
+type Message = ChatMessage & { id: string; citations?: Citation[] };
 
 // Shown in the UI only. It is not part of the conversation sent to the API,
 // which must start with a user message.
@@ -56,12 +62,17 @@ export function ChatWidget() {
     setPending(true);
 
     try {
-      const reply = await sendChat(
+      const { reply, citations } = await sendChat(
         conversation.map(({ role, content }) => ({ role, content })),
       );
       setMessages([
         ...conversation,
-        { id: crypto.randomUUID(), role: "assistant", content: reply },
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: reply,
+          citations,
+        },
       ]);
     } catch (err) {
       // Take the unanswered question out of the conversation and put it back
@@ -112,6 +123,18 @@ export function ChatWidget() {
             {messages.map((message) => (
               <div key={message.id} className={"message " + message.role}>
                 {message.content}
+                {message.citations && message.citations.length > 0 && (
+                  <ul className="message-sources" aria-label="Sources">
+                    {message.citations.map((citation) => (
+                      <li key={citation.document + citation.quote}>
+                        <span>
+                          {citation.title} › {citation.section}
+                        </span>
+                        <q>{citation.quote.replace(/^[^:]+: /, "")}</q>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             ))}
             {pending && (

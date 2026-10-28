@@ -6,7 +6,7 @@ from anthropic.types import MessageParam
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from chatbotator.chat.reply import generate_reply
+from chatbotator.chat.reply import ReplyResult, generate_reply
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,8 +34,16 @@ class ChatRequest(BaseModel):
         return messages
 
 
+class CitationOut(BaseModel):
+    document: str
+    title: str
+    section: str
+    quote: str
+
+
 class ChatResponse(BaseModel):
     reply: str
+    citations: list[CitationOut]  # the policy lines the reply rests on
 
 
 def to_model_message(message: ChatMessage) -> MessageParam:
@@ -44,6 +52,17 @@ def to_model_message(message: ChatMessage) -> MessageParam:
     if message.role == "user":
         return {"role": "user", "content": message.content}
     return {"role": "assistant", "content": message.content}
+
+
+def is_complete(result: ReplyResult) -> bool:
+    """The call succeeded, but the reply may still be unusable: cut off at
+    max_tokens, refused, or empty. Never show half an answer as a success."""
+    return result.response.stop_reason == "end_turn" and bool(result.text.strip())
+
+
+def to_response(result: ReplyResult) -> ChatResponse:
+    citations = [CitationOut(**vars(citation)) for citation in result.citations]
+    return ChatResponse(reply=result.text, citations=citations)
 
 
 @router.post("/api/chat")
@@ -65,11 +84,9 @@ def chat(request: ChatRequest) -> ChatResponse:
         logger.exception("Model call failed")
         raise HTTPException(502, "The assistant is unavailable right now.") from error
 
-    # The call succeeded, but the reply may still be unusable: cut off at
-    # max_tokens, refused, or empty. Never show half an answer as a success.
-    if result.response.stop_reason != "end_turn" or not result.text.strip():
+    if not is_complete(result):
         logger.warning("Incomplete reply (stop_reason=%s)", result.response.stop_reason)
         raise HTTPException(
             502, "The assistant couldn't finish its answer. Please try again."
         )
-    return ChatResponse(reply=result.text)
+    return to_response(result)

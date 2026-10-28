@@ -15,7 +15,13 @@ export async function fetchHealth(signal: AbortSignal): Promise<Health> {
 // Mirror the models in apps/api/src/chatbotator/routes/chat.py.
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 type ChatRequest = { messages: ChatMessage[] };
-type ChatResponse = { reply: string };
+export type Citation = {
+  document: string;
+  title: string;
+  section: string;
+  quote: string;
+};
+export type ChatResponse = { reply: string; citations: Citation[] };
 
 // The longest conversation the API accepts (max_length in ChatRequest).
 export const MAX_CHAT_MESSAGES = 50;
@@ -24,9 +30,10 @@ export const MAX_CHAT_MESSAGES = 50;
 // for its worst case; after that, stop waiting.
 const CHAT_TIMEOUT_MS = 65_000;
 
-// Sends the whole conversation (the API is stateless) and returns the reply.
+// Sends the whole conversation (the API is stateless) and returns the reply
+// with the policy lines it cites.
 // Throws an Error whose message is safe to show to the customer.
-export async function sendChat(messages: ChatMessage[]): Promise<string> {
+export async function sendChat(messages: ChatMessage[]): Promise<ChatResponse> {
   let response: Response;
   try {
     response = await fetch("/api/chat", {
@@ -55,5 +62,5 @@ export async function sendChat(messages: ChatMessage[]): Promise<string> {
         : "Something went wrong. Please try again.",
     );
   }
-  return ((await response.json()) as ChatResponse).reply;
+  return (await response.json()) as ChatResponse;
 }

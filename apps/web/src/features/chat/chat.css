@@ -93,6 +93,23 @@
   align-self: flex-end;
   border-bottom-right-radius: 3px;
 }
+.message-sources {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid #d7dfcc;
+  display: grid;
+  gap: 6px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.message-sources span {
+  display: block;
+  font-weight: 600;
+}
+.message-sources q {
+  color: #5e6b57;
+}
 .message.pending {
   color: #6f7a68;
   font-style: italic;

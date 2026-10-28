@@ -9,18 +9,25 @@ import pytest
 from anthropic.types import Message, MessageParam
 from fastapi.testclient import TestClient
 
-from chatbotator.chat.reply import ReplyResult
+from chatbotator.chat.reply import Citation, ReplyResult
 from chatbotator.main import app
 from chatbotator.routes import chat as chat_route
 
 client = TestClient(app)
 
 
+CITATION = Citation(
+    "returns.md", "Returns & refunds", "Return window", "Return window: ..."
+)
+
+
 def fake_result(text: str, stop_reason: str = "end_turn") -> ReplyResult:
     # model_construct() builds a Message without validation; the route only
     # reads its stop_reason.
     response = Message.model_construct(stop_reason=stop_reason)
-    return ReplyResult(text=text, request={}, response=response, latency_s=0.0)
+    return ReplyResult(
+        text=text, citations=[CITATION], request={}, response=response, latency_s=0.0
+    )
 
 
 @pytest.fixture
@@ -47,7 +54,17 @@ def test_returns_the_model_reply(fake_model: list[list[MessageParam]]) -> None:
     response = client.post("/api/chat", json={"messages": conversation})
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "Fake reply"}
+    assert response.json() == {
+        "reply": "Fake reply",
+        "citations": [
+            {
+                "document": "returns.md",
+                "title": "Returns & refunds",
+                "section": "Return window",
+                "quote": "Return window: ...",
+            }
+        ],
+    }
     assert fake_model == [conversation]  # the whole history reached the model
 
 
