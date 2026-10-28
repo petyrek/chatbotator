@@ -9,8 +9,11 @@ import pytest
 from anthropic.types import Message, MessageParam
 from fastapi.testclient import TestClient
 
-from chatbotator.chat.reply import Citation, ReplyResult
+from chatbotator.assistant.citations import Citation
+from chatbotator.assistant.reply import ReplyResult
 from chatbotator.main import app
+
+# The module itself, so tests can replace the generate_reply it calls.
 from chatbotator.routes import chat as chat_route
 
 client = TestClient(app)
@@ -94,6 +97,8 @@ def fail_with(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
     monkeypatch.setattr(chat_route, "generate_reply", failing_generate_reply)
 
 
+# The SDK's errors need an HTTP request/response to be built; nothing is sent.
+# (httpx2 is the HTTP library the Anthropic SDK uses.)
 REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 HELLO = {"messages": [{"role": "user", "content": "Hello"}]}
 

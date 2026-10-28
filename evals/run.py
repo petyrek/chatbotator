@@ -28,12 +28,15 @@ from grounding import GROUNDING_PROMPT, GroundingResult, check_grounding
 from judge import JUDGE_EFFORT, JUDGE_MODEL, JUDGE_PROMPT, Verdict, judge
 from report import render_markdown, result_line
 
-from chatbotator.chat import reply as bot
-from chatbotator.chat.reply import Citation
-from chatbotator.knowledge.documents import DOCUMENTS, Document, parse_document
+from chatbotator.assistant import reply as bot
+from chatbotator.assistant.citations import Citation
+from chatbotator.assistant.prompt import SYSTEM_PROMPT
+from chatbotator.policies import DOCUMENTS, Document, parse_document
+
+# Deliberately from the HTTP layer: the evals replay the endpoint's own request
+# validation and response shape, without running a server.
 from chatbotator.routes.chat import (
     ChatRequest,
-    is_complete,
     to_model_message,
     to_response,
 )
@@ -80,8 +83,8 @@ def run_settings(split: str, cases_file: Path) -> dict[str, Any]:
             "model": bot.MODEL,
             "effort": bot.EFFORT,
             "max_tokens": bot.MAX_TOKENS,
-            "system_prompt_sha": short_hash(bot.SYSTEM_PROMPT),
-            "system_prompt": bot.SYSTEM_PROMPT,
+            "system_prompt_sha": short_hash(SYSTEM_PROMPT),
+            "system_prompt": SYSTEM_PROMPT,
         },
         "judge": {
             "model": JUDGE_MODEL,
@@ -222,7 +225,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         trace["api"] = {
             "request": request.model_dump(),
             # The endpoint answers 502 instead of an incomplete reply.
-            "status": 200 if is_complete(reply) else 502,
+            "status": 200 if reply.is_complete else 502,
             "response": to_response(reply).model_dump(),
         }
         trace["bot"] = call_record(reply.request, reply.response, reply.latency_s)

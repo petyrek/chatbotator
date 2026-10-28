@@ -8,28 +8,23 @@ import pytest
 from anthropic.types import (
     CitationsSearchResultLocation,
     Message,
+    MessageParam,
     TextBlock,
     ThinkingBlock,
 )
 
-from chatbotator.chat import reply
-from chatbotator.knowledge.documents import DOCUMENTS, Document, Passage
-
-
-def returns_citation(block: int) -> CitationsSearchResultLocation:
-    index = [d.name for d in DOCUMENTS].index("returns.md")
-    return CitationsSearchResultLocation.model_construct(
-        type="search_result_location",
-        cited_text=f"cited line {block}",
-        search_result_index=index,
-        start_block_index=block,
-        end_block_index=block + 1,
-    )
+from chatbotator.assistant import reply
+from chatbotator.assistant.citations import Citation
+from chatbotator.policies import DOCUMENTS, Document, Passage
 
 
 def fake_client(sent: dict[str, Any], content: list[Any]) -> SimpleNamespace:
+    """Stands in for the Anthropic client: client.messages.create(...) records
+    its arguments into `sent` and returns a response holding `content`."""
+
     def create(**request: Any) -> Message:
         sent.update(request)
+        # model_construct() builds the SDK object without validation.
         return Message.model_construct(content=content, stop_reason="end_turn")
 
     return SimpleNamespace(messages=SimpleNamespace(create=create))
@@ -39,8 +34,10 @@ def test_attaches_all_documents_to_the_latest_message_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sent: dict[str, Any] = {}
+    # generate_reply looks up the module-level `client` when it runs, so
+    # replacing it here makes it use the fake.
     monkeypatch.setattr(reply, "client", fake_client(sent, []))
-    conversation: Any = [
+    conversation: list[MessageParam] = [
         {"role": "user", "content": "Do you ship to Czechia?"},
         {"role": "assistant", "content": "Yes."},
         {"role": "user", "content": "How much?"},
@@ -56,31 +53,42 @@ def test_attaches_all_documents_to_the_latest_message_only(
     assert result.request == sent  # what we record is exactly what was sent
 
 
-def test_returns_only_the_text_and_the_cited_policy_lines(
+def test_the_reply_is_the_text_blocks_joined_without_thinking(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # With citations on, one reply arrives as several text blocks.
     content = [
         ThinkingBlock.model_construct(type="thinking", thinking="Check the policy."),
-        TextBlock.model_construct(
-            type="text", text="You have 30 days", citations=[returns_citation(0)]
-        ),
+        TextBlock.model_construct(type="text", text="You have 30 days", citations=None),
         TextBlock.model_construct(
             type="text", text=", counted from delivery.", citations=None
         ),
-        TextBlock.model_construct(
-            type="text", text=" Day 0!", citations=[returns_citation(0)]
-        ),
     ]
     monkeypatch.setattr(reply, "client", fake_client({}, content))
-    returns = next(d for d in DOCUMENTS if d.name == "returns.md")
 
     result = reply.generate_reply([{"role": "user", "content": "How long?"}])
 
-    assert result.text == "You have 30 days, counted from delivery. Day 0!"
-    assert len(result.citations) == 1  # the same line cited twice is listed once
-    assert result.citations[0].document == "returns.md"
-    assert result.citations[0].section == returns.passages[0].section
-    assert result.citations[0].quote == "cited line 0"
+    assert result.text == "You have 30 days, counted from delivery."
+
+
+def test_each_passage_is_one_citable_block_that_names_its_section() -> None:
+    document = Document(
+        "returns.md",
+        "Returns & refunds",
+        [
+            Passage("Return window", "Day 0 is delivery."),
+            Passage("Condition", "Unused."),
+        ],
+    )
+
+    [result] = reply.as_search_results([document])
+
+    assert result["source"] == "returns.md"
+    assert result["citations"] == {"enabled": True}
+    assert [block["text"] for block in result["content"]] == [
+        "Return window: Day 0 is delivery.",
+        "Condition: Unused.",
+    ]
 
 
 def test_extra_documents_are_sent_after_the_store_and_cited_by_index(
@@ -105,5 +113,5 @@ def test_extra_documents_are_sent_after_the_store_and_cited_by_index(
     *documents, _ = sent["messages"][0]["content"]
     assert documents[-1]["source"] == "note.md"
     assert result.citations == [
-        reply.Citation("note.md", "Supplier note", "Details", "Details: 12 pegs.")
+        Citation("note.md", "Supplier note", "Details", "Details: 12 pegs.")
     ]

@@ -23,14 +23,37 @@ Python names use `snake_case` for variables, functions and fields, and `PascalCa
 ```text
 src/chatbotator/      The importable package. src/ keeps tests importing the
                       installed package rather than the raw folder.
-  main.py             Creates the FastAPI app and mounts the routers
-  routes/             Thin HTTP handlers; real logic lives in domain packages
-  chat/               M1: model client, prompts, conversation
-  knowledge/          M1: ingestion, chunking, retrieval, citations
-tests/                pytest
+  main.py             Creates the FastAPI app and mounts each endpoint's router
+  settings.py         Where the data lives, and the demo's fixed date (TODAY)
+  routes/             HTTP only: one module per endpoint, with its request and
+                      response models; handlers stay thin
+    health.py         GET /api/health
+    chat.py           POST /api/chat: calls the assistant, maps model errors
+                      to HTTP errors
+  assistant/          Everything about talking to the model
+    prompt.py         The system prompt
+    reply.py          The model and its settings, and the call: attaches the
+                      documents, returns the reply
+    citations.py      Turns the model's citations into policy lines
+  policies.py         Loads data/knowledge/*.md into titles and passages
+tests/                pytest: test_<package>_<module>.py per module, e.g.
+                      test_routes_chat.py, test_assistant_reply.py
 ```
 
-Packages for milestones 2 and 3 (orders, tools, refunds) don't exist yet. You decide their boundaries when you get there.
+Planned for milestones 2 and 3, so new code has an obvious home:
+
+```text
+  customers.py        M2: current_customer(), who is signed in (set by the server)
+  orders.py           M2: order data and return eligibility, computed in code
+                      (becomes an orders/ package if eligibility grows)
+  assistant/tools.py  M2: tool schemas, argument validation, dispatch
+  routes/refunds.py   M3: the endpoint that confirms a refund proposal
+  refunds/            M3: proposals and executing them; db.py holds SQLite
+```
+
+How they connect: only routes call `current_customer()`. The route passes the customer to `generate_reply`, which passes it to the tools, so the model can never choose whose orders it sees. Eligibility takes `today` as an argument instead of importing `TODAY`, so tests can set any date.
+
+There are no "services" or "repositories" layers: a package exists only when it holds something. A response model sits next to its route until a second route needs it.
 
 ## Commands (from apps/api)
 

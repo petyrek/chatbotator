@@ -1,3 +1,5 @@
+"""Creates the FastAPI app and mounts each endpoint's router."""
+
 from fastapi import FastAPI
 
 from chatbotator.routes import chat, health

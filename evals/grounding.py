@@ -19,8 +19,8 @@ from anthropic.types import Message
 from judge import JUDGE_EFFORT, JUDGE_MODEL
 from pydantic import BaseModel
 
-from chatbotator.chat.reply import SYSTEM_PROMPT
-from chatbotator.knowledge.documents import DOCUMENTS, Document
+from chatbotator.assistant.prompt import SYSTEM_PROMPT
+from chatbotator.policies import DOCUMENTS, Document
 
 GROUNDING_PROMPT = """\
 You check whether a customer support reply is grounded in its sources. You get a

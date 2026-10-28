@@ -1,3 +1,5 @@
+"""Tests for GET /api/health."""
+
 from fastapi.testclient import TestClient
 
 from chatbotator.main import app

@@ -41,15 +41,15 @@ apps/web/src/
   app/               App shell: header, footer, hash routing, health check
   features/shop/     Hero, product grid
   features/help/     Help center and Markdown renderer
-  features/chat/     Chat widget (connect it to /api/chat)
+  features/chat/     Chat widget, talks to POST /api/chat
   styles/global.css  Tokens, resets, shared typography
 
 apps/api/src/chatbotator/
   main.py            Creates the FastAPI app
-  routes/            Thin HTTP handlers: health, chat
-  chat/              M1: model client, prompts, conversation
-  knowledge/         M1: ingestion, chunking, retrieval, citations
-                     (M2/M3 packages are yours to design when you get there)
+  routes/            HTTP endpoints: health, chat
+  assistant/         The model call, its system prompt and citations
+  policies.py        Loads the policy documents
+                     (full layout, including M2/M3: apps/api/README.md)
 apps/api/tests/      pytest
 apps/api/README.md   Python for TypeScript developers
 

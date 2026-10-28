@@ -37,7 +37,7 @@ Carried over to Milestone 4: measure pass rates over repeated runs, check whethe
 
 ## Milestone 1 — Answer with evidence
 
-**Sessions 1–2 · 6–8 hours** · **Code:** `chat/`, `knowledge/`, `routes/chat.py`, `apps/web/src/api.ts`, `evals/`
+**Sessions 1–2 · 6–8 hours** · **Code:** `assistant/`, `policies.py`, `routes/chat.py`, `apps/web/src/api.ts`, `evals/`
 
 Build:
 

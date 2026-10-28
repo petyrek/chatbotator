@@ -1,3 +1,6 @@
+"""POST /api/chat: validates the conversation, asks the assistant for a reply,
+and turns model failures into errors the chat widget can show."""
+
 import logging
 from typing import Literal
 
@@ -6,7 +9,7 @@ from anthropic.types import MessageParam
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
-from chatbotator.chat.reply import ReplyResult, generate_reply
+from chatbotator.assistant.reply import ReplyResult, generate_reply
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -14,9 +17,8 @@ router = APIRouter()
 
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
-    # Long enough for any model reply (max_tokens 4096 is roughly 16k characters),
-    # since earlier replies come back in later requests. The widget limits what
-    # customers type to 1000 characters.
+    # Earlier replies come back in later requests, so allow any reply
+    # (max_tokens 4096 ≈ 16k characters). The widget caps typing at 1000.
     content: str = Field(min_length=1, max_length=20_000)
 
 
@@ -24,6 +26,7 @@ class ChatRequest(BaseModel):
     # The widget offers "Start a new conversation" before reaching this limit.
     messages: list[ChatMessage] = Field(min_length=1, max_length=50)
 
+    # Runs after the field's own checks; a ValueError here becomes a 422.
     @field_validator("messages")
     @classmethod
     def starts_and_ends_with_user(
@@ -34,7 +37,10 @@ class ChatRequest(BaseModel):
         return messages
 
 
-class CitationOut(BaseModel):
+# The response shapes below are mirrored in apps/web/src/api.ts. They are kept
+# separate from the assistant's own types, so the HTTP contract only changes
+# when we change it here.
+class CitationOut(BaseModel):  # `Citation` in api.ts
     document: str
     title: str
     section: str
@@ -54,20 +60,26 @@ def to_model_message(message: ChatMessage) -> MessageParam:
     return {"role": "assistant", "content": message.content}
 
 
-def is_complete(result: ReplyResult) -> bool:
-    """The call succeeded, but the reply may still be unusable: cut off at
-    max_tokens, refused, or empty. Never show half an answer as a success."""
-    return result.response.stop_reason == "end_turn" and bool(result.text.strip())
-
-
 def to_response(result: ReplyResult) -> ChatResponse:
-    citations = [CitationOut(**vars(citation)) for citation in result.citations]
+    citations = [
+        CitationOut(
+            document=citation.document,
+            title=citation.title,
+            section=citation.section,
+            quote=citation.quote,
+        )
+        for citation in result.citations
+    ]
     return ChatResponse(reply=result.text, citations=citations)
 
 
+# FastAPI validates the JSON body into ChatRequest (422 if invalid) and turns
+# the returned ChatResponse into JSON.
 @router.post("/api/chat")
-def chat(request: ChatRequest) -> ChatResponse:
+def post_chat(request: ChatRequest) -> ChatResponse:
     history = [to_model_message(message) for message in request.messages]
+    # Each SDK error becomes a message that is safe to show the customer; the
+    # details go only to the server log (and never the API key).
     try:
         result = generate_reply(history)
     except anthropic.AuthenticationError as error:
@@ -80,11 +92,13 @@ def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(
             503, "The assistant is busy. Please try again shortly."
         ) from error
+    # APIError is the base class, so it comes last and catches the rest
+    # (timeouts, connection errors, 5xx).
     except anthropic.APIError as error:
         logger.exception("Model call failed")
         raise HTTPException(502, "The assistant is unavailable right now.") from error
 
-    if not is_complete(result):
+    if not result.is_complete:
         logger.warning("Incomplete reply (stop_reason=%s)", result.response.stop_reason)
         raise HTTPException(
             502, "The assistant couldn't finish its answer. Please try again."

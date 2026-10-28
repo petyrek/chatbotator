@@ -1,3 +1,5 @@
+"""GET /api/health: lets the web app show whether the API is up."""
+
 from typing import Literal
 
 from fastapi import APIRouter
