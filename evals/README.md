@@ -5,20 +5,21 @@ An eval dataset is a fixed set of conversations, each paired with what a good re
 `npm run eval` runs every case: it sends `messages` to the chat code (directly, not over HTTP), has an LLM judge grade the reply, and decides pass or fail in code. Rerun it after every prompt, chunking or retrieval change to see what improved and what broke.
 
 - `run.py`: runs the cases, grades them, writes the results.
-- `judge.py`: the judge prompt and the shape of its verdict.
+- `judge.py`: the judge: behaviour and the `required` / `forbidden` checklist.
+- `grounding.py`: the grounding check: is every statement in the reply backed by a source?
 - `report.py`: formats the traces as Markdown.
 
 ## Reading a run
 
 Each run gets a folder in `results/`, named by time and split:
 
-- `trace.md`: start here. For every case, step by step: the exact request to the bot, its thinking and reply, the exact request to the judge, its verdict, and the grading decision.
+- `trace.md`: start here. The setup, the scores, how a case runs, and (once) the prompts and documents; then every case, result first.
 - `traces/<case-id>.json`: the same, as raw JSON (full API requests and responses).
 - `summary.json`: scores and the settings that produced them (models, effort, prompt fingerprints, git commit). Only this file is committed; two runs are comparable only if their prompt fingerprints and judge match.
 
-Each case in `trace.md` starts with its purpose, the conversation (earlier assistant turns are marked as fixed test history), and a table of expected vs actual with the judge's quoted evidence; every request and response is folded below.
+Each case in `trace.md` starts with its purpose, the conversation (the bot's reply marks each cited policy line as [n]), a table of expected vs actual with the judge's evidence, and the grounding check. Folded below are the eight JSON messages of the data flow, in order: browser → API → model → API → browser, then the judge and the grounding check.
 
-Scores have a strict **pass** (everything right) plus partial credit: **behavior as expected**, **required met** and **forbidden found**. A case that crashes counts as an **error**, not a failure.
+Scores have a strict **pass** (everything right) plus partial credit: **behavior as expected**, **required met**, **forbidden found**, **grounded statements** and **expected sources cited**. A case that crashes counts as an **error**, not a failure.
 
 ## Files
 
@@ -58,8 +59,9 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 
 ## How the fields get graded
 
-- **By an LLM judge** (`claude-sonnet-5-5`, a different model from the bot, because models grade their own writing kindly): the reply's behaviour, whether each `required` item is met, and whether any `forbidden` item appears. For every item it quotes the words in the reply its decision rests on and explains it in one sentence. It only reports observations.
-- **By code:** pass or fail, from the judge's observations and `expected_behavior`; later, whether citations overlap `sources`.
+- **By an LLM judge** (`claude-haiku-5-5`, the same model as the bot to keep runs cheap; models tend to grade their own writing kindly, so switch to a stronger model if scores look too kind): the reply's behaviour, whether each `required` item is met, and whether any `forbidden` item appears. For every item it quotes the words in the reply its decision rests on and explains it in one sentence. It only reports observations.
+- **By a grounding check** (same model, a separate call with one job): it splits the reply into factual statements and, for each, copies the supporting text from the sources (the policy documents, the bot's instructions, and what the customer said). **Code then checks that every quote really exists in the sources**, so "supported" always points at real text. It is reported, but doesn't decide pass/fail until calibrated (`GROUNDING_DECIDES_PASS` in `run.py`).
+- **By code:** pass or fail, from the judge's observations and `expected_behavior`; and for `answer` cases, whether the reply cites at least one of the case's `sources` (from the API's citations).
 
 Before trusting a judge, check its verdicts against your own on a sample, and again whenever the judge prompt changes.
 

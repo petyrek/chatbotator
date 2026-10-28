@@ -1,7 +1,9 @@
 """Turns one run's traces into trace.md.
 
-Each case starts with what a reader needs (purpose, conversation, expected vs
-actual, evidence); every request and response sent along the way is folded below.
+The top shows the setup, the scores, and what is sent unchanged with every case
+(prompts and documents). Each case shows its result first; below it, folded, are
+the JSON messages that passed between the browser, the API, the model and the
+graders, in order.
 """
 
 import json
@@ -9,6 +11,23 @@ from typing import Any
 
 FENCE = "````"  # four backticks, so replies containing ``` can't break the blocks
 OK, NOT_OK = "✓", "✗"
+
+FLOW = """\
+| # | From → to | What travels |
+|---|---|---|
+| ① | Browser → API | `POST /api/chat`: the conversation so far |
+| ② | API → Anthropic | the conversation, with all policy documents attached to the latest message, plus the bot's system prompt |
+| ③ | Anthropic → API | the bot's reply as text blocks; the blocks that rest on a document carry citations |
+| ④ | API → Browser | the reply and the policy lines it cites |
+| ⑤ | Eval → Anthropic | the judge gets the conversation, the reply and the case's checklist |
+| ⑥ | Anthropic → Eval | the judge's verdict, as JSON |
+| ⑦ | Eval → Anthropic | the grounding check gets the reply and everything the bot had |
+| ⑧ | Anthropic → Eval | each statement in the reply, with the source text that supports it |
+
+Then code decides pass or fail (`grade` in run.py). The evals call the same code
+as the API without running an HTTP server, so ① and ④ are built with the API's
+own request and response models. In the JSON below, `‹…›` marks something
+shortened for this page; `traces/<case>.json` has everything."""
 
 
 # --- Small formatting helpers -------------------------------------------------
@@ -35,6 +54,16 @@ def folded(summary: str, body: str) -> str:
     return f"<details><summary>{summary}</summary>\n\n{body}\n\n</details>"
 
 
+def tidy(value: Any) -> Any:
+    """Drops null fields and puts "type" first, so each block reads top-down."""
+    if isinstance(value, dict):
+        keys = sorted(value, key=lambda key: key != "type")
+        return {k: tidy(value[k]) for k in keys if value[k] is not None}
+    if isinstance(value, list):
+        return [tidy(v) for v in value]
+    return value
+
+
 # --- One-line results (used by the console and the overview) ------------------
 
 
@@ -48,28 +77,57 @@ def result_line(case: dict[str, Any], result: dict[str, Any]) -> str:
         if m["behavior_ok"]
         else f"expected {case['expected_behavior']}, got {m['behavior']}"
     )
-    return (
-        f"{behavior} · required met {m['required_met']}/{m['required_total']}"
-        f" · forbidden found {m['forbidden_detected']}/{m['forbidden_total']}"
-    )
+    parts = [
+        behavior,
+        f"required met {m['required_met']}/{m['required_total']}",
+        f"forbidden found {m['forbidden_detected']}/{m['forbidden_total']}",
+        f"grounded {m['statements_supported']}/{m['statements_total']}",
+    ]
+    if m["sources_total"]:
+        parts.append(
+            f"expected sources cited {m['sources_cited']}/{m['sources_total']}"
+        )
+    return " · ".join(parts)
 
 
-# --- One case ------------------------------------------------------------------
+# --- The bot's reply, with its citations as numbered markers -------------------
 
 
-def conversation(case: dict[str, Any], reply: str | None) -> str:
+def reply_with_markers(response: dict[str, Any]) -> tuple[str, list[str]]:
+    """Rebuilds the reply from its text blocks, putting [n] after each block
+    that cites a document, so you can see which sentence rests on which line."""
+    text, notes = "", []
+    numbers: dict[tuple[int, int], int] = {}
+    for block in response["content"]:
+        if block["type"] != "text":
+            continue
+        text += block["text"]
+        for cited in block.get("citations") or []:
+            key = (cited["search_result_index"], cited["start_block_index"])
+            if key not in numbers:
+                numbers[key] = len(numbers) + 1
+                notes.append(
+                    f"[{numbers[key]}] {cited['title']}: *“{cited['cited_text']}”*"
+                )
+            text += f" [{numbers[key]}]"
+    return text, notes
+
+
+def conversation(case: dict[str, Any], bot: dict[str, Any] | None) -> str:
     lines = []
     for message in case["messages"]:
         if message["role"] == "user":
             lines.append(f"**Customer:** {message['content']}")
         else:
-            lines.append(
-                f"**Assistant** *(fixed test history, not generated in this run)*: "
-                f"{message['content']}"
-            )
-    if reply is not None:
-        lines.append(f"**Bot reply (this run):** {reply}")
+            lines.append(f"**Assistant** *(fixed test history)*: {message['content']}")
+    if bot is not None:
+        text, notes = reply_with_markers(bot["response"])
+        lines.append(f"**Bot (this run):** {text}")
+        lines.append("\n".join(f"- {note}" for note in notes) or "*Cited nothing.*")
     return quote("\n\n".join(lines))
+
+
+# --- The graders' findings ------------------------------------------------------
 
 
 def evidence(check: dict[str, Any]) -> str:
@@ -79,14 +137,16 @@ def evidence(check: dict[str, Any]) -> str:
     return text
 
 
-def checks_table(case: dict[str, Any], verdict: dict[str, Any]) -> str:
+def checks_table(
+    case: dict[str, Any], verdict: dict[str, Any], bot: dict[str, Any]
+) -> str:
     behavior_ok = verdict["behavior"] == case["expected_behavior"]
     rows = [
         "| Check | Expected | Result | Evidence |",
         "|---|---|---|---|",
         f"| Behavior | {case['expected_behavior']} "
         f"| {OK if behavior_ok else NOT_OK} {verdict['behavior']} "
-        "| See *Judge's reasoning* below the table. |",
+        f"| {cell(verdict['reasoning'])} |",
     ]
     for check in verdict["required"]:
         result = f"{OK} met" if check["met"] else f"{NOT_OK} not met"
@@ -94,112 +154,269 @@ def checks_table(case: dict[str, Any], verdict: dict[str, Any]) -> str:
             f"| Required | {cell(check['requirement'])} | {result} | {evidence(check)} |"
         )
     for check in verdict["forbidden"]:
-        result = f"{NOT_OK} detected" if check["detected"] else f"{OK} not detected"
+        result = f"{NOT_OK} found" if check["detected"] else f"{OK} not found"
         rows.append(
             f"| Forbidden | {cell(check['claim'])} | {result} | {evidence(check)} |"
+        )
+    expected = [f"{s['doc']} › {s['section']}" for s in case["sources"]]
+    cited = {f"{c['document']} › {c['section']}" for c in bot["citations"]}
+    if expected and case["expected_behavior"] == "answer":
+        hit = [e for e in expected if e in cited]
+        result = f"{OK} cited" if hit else f"{NOT_OK} not cited"
+        rows.append(
+            f"| Sources | {', '.join(expected)} | {result} "
+            f"| Checked in code: an answer must cite at least one of these. "
+            f"Cited: {', '.join(hit or sorted(cited)) or 'nothing'}. |"
         )
     return "\n".join(rows)
 
 
-def thinking_summary(response: dict[str, Any]) -> str:
-    return "\n\n".join(
-        block["thinking"]
-        for block in response["content"]
-        if block["type"] == "thinking" and block.get("thinking")
-    )
+def grounding_table(grounding: dict[str, Any], decides_pass: bool) -> str:
+    statements = grounding["statements"]
+    supported = sum(s["supported"] for s in statements)
+    role = "decides pass/fail" if decides_pass else "reported only"
+    rows = [
+        f"**Grounding** ({role}): {supported}/{len(statements)} statements "
+        "supported by a quote that code found in the sources",
+        "",
+        "| Statement in the reply | Supported | Source quote |",
+        "|---|---|---|",
+    ]
+    for s in statements:
+        if s["supported"]:
+            result = OK
+        elif s["grader_says_supported"]:
+            result = f"{NOT_OK} the grader's quote isn't in the sources"
+        else:
+            result = f"{NOT_OK} {cell(s['explanation'])}"
+        source = f"*“{cell(s['supporting_quote'])}”*" if s["supporting_quote"] else ""
+        rows.append(f"| {cell(s['statement'])} | {result} | {source} |")
+    if not statements:
+        rows.append("| (no factual statements) | | |")
+    return "\n".join(rows)
 
 
-def call_details(title: str, record: dict[str, Any], sent: str) -> str:
-    request, response = record["request"], record["response"]
+# --- The data flow: what each hop carried ---------------------------------------
+
+
+def compact_response(response: dict[str, Any], decode_text: bool) -> dict[str, Any]:
+    """The response's content, stop_reason and token counts.
+    Graders answer with a JSON object inside a text block; decode_text shows it
+    decoded."""
+    content = []
+    for block in tidy(response["content"]):
+        if block["type"] == "thinking":
+            block["signature"] = "‹signature›"
+        if block["type"] == "text" and decode_text:
+            block["text"] = json.loads(block["text"])
+        content.append(block)
     usage = response["usage"]
-    thinking = thinking_summary(response)
-    effort = request.get("output_config", {}).get("effort", "default")
-    return "\n\n".join(
-        [
-            f"#### {title}",
-            f"**Sent to** `{request['model']}` · max_tokens {request['max_tokens']} · "
-            f"effort {effort} · system prompt: see *System prompts* at the top",
-            sent,
-            f"**Received** in {record['latency_s']} s · stop_reason `{response['stop_reason']}` "
-            f"· {usage['input_tokens']} input / {usage['output_tokens']} output tokens "
-            "(output includes thinking)",
-            "**Thinking (summary)**",
-            quote(thinking)
-            if thinking
-            else "*No thinking: the model answered directly.*",
-        ]
-    )
+    return {
+        "content": content,
+        "stop_reason": response["stop_reason"],
+        "usage": tidy(
+            {
+                "input_tokens": usage["input_tokens"],
+                "output_tokens": usage["output_tokens"],
+                "output_tokens_details": usage.get("output_tokens_details"),
+            }
+        ),
+    }
 
 
-def render_case(trace: dict[str, Any]) -> str:
-    case, bot, judge, result = (
-        trace["case"],
+def bot_request(request: dict[str, Any]) -> dict[str, Any]:
+    messages = []
+    for message in request["messages"]:
+        if isinstance(message["content"], list):
+            content = [
+                {**b, "content": f"‹{len(b['content'])} passages, see Documents›"}
+                if b["type"] == "search_result"
+                else b
+                for b in message["content"]
+            ]
+            message = {**message, "content": content}
+        messages.append(message)
+    return {
+        **request,
+        "system": "‹the bot's system prompt, see Prompts›",
+        "messages": messages,
+    }
+
+
+def grader_request(
+    request: dict[str, Any], prompt_name: str, material: Any
+) -> dict[str, Any]:
+    message = request["messages"][0]
+    return {
+        **request,
+        "system": f"‹the {prompt_name}, see Prompts›",
+        "messages": [{**message, "content": material}],
+        "output_format": "‹the JSON schema of the answer›",
+    }
+
+
+def hop(title: str, value: Any, note: str = "") -> str:
+    heading = f"**{title}**" + (f" · {note}" if note else "")
+    return f"{heading}\n\n{json_block(value)}"
+
+
+def data_flow(trace: dict[str, Any]) -> str:
+    api, bot, judge, grounding = (
+        trace["api"],
         trace["bot"],
         trace["judge"],
-        trace["result"],
+        trace["grounding"],
     )
+    decoded = "`content` is sent as a JSON string, shown decoded"
+    # The graders get the same reply that ④ shows; repeating it adds nothing.
+    reply = api["response"]["reply"] if api else None
+    same_reply = "‹the reply from ④›"
+    answer = "the text block holds a JSON string, shown decoded"
+    hops = []
+    if api:
+        hops.append(hop("① Browser → API · POST /api/chat", api["request"]))
+    if bot:
+        hops += [
+            hop(
+                "② API → Anthropic · client.messages.create(…)",
+                bot_request(bot["request"]),
+            ),
+            hop(
+                "③ Anthropic → API",
+                compact_response(bot["response"], decode_text=False),
+                f"{bot['latency_s']:.1f} s",
+            ),
+        ]
+    if api:
+        status = api["status"]
+        note = (
+            "200 OK · built from ③: the text blocks joined, thinking dropped, and "
+            "each citation's section looked up from its search_result_index and "
+            "start_block_index"
+            if status == 200
+            else f"{status}: the reply was incomplete, so the browser gets an error"
+        )
+        hops.append(hop("④ API → Browser", api["response"], note))
+    if judge:
+        material = json.loads(judge["request"]["messages"][0]["content"])
+        if material["final_reply"] == reply:
+            material["final_reply"] = same_reply
+        hops += [
+            hop(
+                "⑤ Eval → Anthropic · the judge · client.messages.parse(…)",
+                grader_request(judge["request"], "judge prompt", material),
+                decoded,
+            ),
+            hop(
+                "⑥ Anthropic → Eval",
+                compact_response(judge["response"], decode_text=True),
+                f"{judge['latency_s']:.1f} s · {answer}",
+            ),
+        ]
+    if grounding:
+        material = json.loads(grounding["request"]["messages"][0]["content"])
+        material["sources"]["policy_documents"] = (
+            "‹the same documents as plain text, one “Section: line” per line›"
+        )
+        material["sources"]["assistant_instructions"] = (
+            "‹the bot's system prompt, see Prompts›"
+        )
+        if material["reply"] == reply:
+            material["reply"] = same_reply
+        hops += [
+            hop(
+                "⑦ Eval → Anthropic · the grounding check · client.messages.parse(…)",
+                grader_request(grounding["request"], "grounding prompt", material),
+                decoded,
+            ),
+            hop(
+                "⑧ Anthropic → Eval",
+                compact_response(grounding["response"], decode_text=True),
+                f"{grounding['latency_s']:.1f} s · {answer}",
+            ),
+        ]
+    calls = [record for record in (bot, judge, grounding) if record]
+    seconds = sum(record["latency_s"] for record in calls)
+    tokens_in = sum(record["response"]["usage"]["input_tokens"] for record in calls)
+    tokens_out = sum(record["response"]["usage"]["output_tokens"] for record in calls)
+    summary = (
+        f"Data flow: every JSON sent and received, in order · {len(calls)} model "
+        f"calls · {seconds:.1f} s · {tokens_in:,} input / {tokens_out:,} output tokens"
+    )
+    return folded(summary, "\n\n".join(hops))
+
+
+# --- One case ------------------------------------------------------------------
+
+
+def render_case(trace: dict[str, Any], grounding_decides_pass: bool) -> str:
+    case, bot, result = trace["case"], trace["bot"], trace["result"]
     status = result["status"].upper()
     mark = OK if result["status"] == "passed" else NOT_OK
     parts = [
         f'<a id="{case["id"]}"></a>',
         f"## {case['id']} · {case['category']} · {mark} {status}",
-        f"**Purpose:** {case['purpose']}",
-        "**Conversation**",
-        conversation(case, bot["reply"] if bot else None),
+        f"*{case['purpose']}*",
+        conversation(case, bot),
     ]
-
     if result["status"] == "error":
-        parts += [
-            "**The case errored, so it was not graded:**",
-            code_block(result["error"]),
-        ]
+        parts += ["**Error, so the case was not graded:**", code_block(result["error"])]
     else:
-        verdict = judge["verdict"]
         parts += [
-            checks_table(case, verdict),
-            "**Judge's reasoning**",
-            quote(verdict["reasoning"]),
-            f"**Result: {status}** · {result_line(case, result)}",
+            checks_table(case, trace["judge"]["verdict"], bot),
+            grounding_table(trace["grounding"], grounding_decides_pass),
         ]
-
-    steps = []
-    if bot:
-        steps.append(
-            call_details(
-                "1 · The bot",
-                bot,
-                "Messages sent (the whole conversation, every time):\n\n"
-                + json_block(bot["request"]["messages"]),
+        decision = "**Decision** (code, `grade` in run.py): "
+        if result["problems"]:
+            decision += f"{NOT_OK} failed because:\n" + "\n".join(
+                f"- {problem}" for problem in result["problems"]
             )
-        )
-    if judge:
-        steps.append(
-            call_details(
-                "2 · The judge",
-                judge,
-                "Message sent (the case material, JSON-encoded; its output schema is in "
-                f"`traces/{case['id']}.json`):\n\n"
-                + code_block(judge["request"]["messages"][0]["content"], "json"),
-            )
-        )
-    if steps:
-        parts.append(
-            folded("Step by step: everything sent and received", "\n\n".join(steps))
-        )
+        else:
+            decision += f"{OK} passed: no check failed"
+        parts.append(decision)
+    parts.append(data_flow(trace))
     return "\n\n".join(parts)
 
 
 # --- The whole run --------------------------------------------------------------
 
 
+def documents(traces: list[dict[str, Any]]) -> str:
+    """The documents as the bot gets them, numbered the way citations point at
+    them: search_result_index picks the document, start/end_block_index the
+    lines (end exclusive)."""
+    request = next(t["bot"]["request"] for t in traces if t["bot"])
+    blocks = request["messages"][-1]["content"]
+    results = [b for b in blocks if b["type"] == "search_result"]
+    lines = []
+    for index, result in enumerate(results):
+        lines.append(f"search_result_index {index} · {result['source']}")
+        lines += [
+            f"  {i:>2}  {passage['text']}"
+            for i, passage in enumerate(result["content"])
+        ]
+    return code_block("\n".join(lines))
+
+
 def render_markdown(
     settings: dict[str, Any], scores: dict[str, Any], traces: list[dict[str, Any]]
 ) -> str:
-    bot, judge, total = settings["bot"], settings["judge"], scores["total"]
+    bot, judge, grounding = settings["bot"], settings["judge"], settings["grounding"]
+    total = scores["total"]
     commit = settings["git_commit"]
     if settings["uncommitted_changes"]:
         commit += " + uncommitted changes"
 
+    setup = "\n".join(
+        [
+            "| | Model | Effort | Prompt fingerprint |",
+            "|---|---|---|---|",
+            f"| Bot | `{bot['model']}` | {bot['effort']} | `{bot['system_prompt_sha']}` |",
+            f"| Judge | `{judge['model']}` | {judge['effort']} | `{judge['prompt_sha']}` |",
+            f"| Grounding check | `{grounding['model']}` | {grounding['effort']} "
+            f"| `{grounding['prompt_sha']}` |",
+        ]
+    )
     overview = "\n".join(
         [
             "| Case | Category | Result | Summary |",
@@ -215,35 +432,50 @@ def render_markdown(
         f"| {category} | {row['passed']}/{row['cases']} "
         f"| {row['behavior_ok']}/{row['cases'] - row['errors']} "
         f"| {row['required_met']}/{row['required_total']} "
-        f"| {row['forbidden_detected']}/{row['forbidden_total']} | {row['errors']} |"
+        f"| {row['forbidden_detected']}/{row['forbidden_total']} "
+        f"| {row['statements_supported']}/{row['statements_total']} "
+        f"| {row['sources_cited']}/{row['sources_total']} | {row['errors']} |"
         for category, row in scores.items()
     )
-    prompts = (
-        "**Bot**\n\n"
-        + code_block(bot["system_prompt"])
-        + "\n\n**Judge**\n\n"
-        + code_block(judge["prompt"])
-    )
-    header = "\n\n".join(
+    prompts = "\n\n".join(
         [
-            f"# Eval run · {settings['split']} · {settings['started_at']}",
-            f"**{total['passed']}/{total['cases']} passed** · {total['errors']} errors · "
-            f"bot context: {settings['bot_context']}",
-            "| | |\n|---|---|\n"
-            f"| Bot | `{bot['model']}` · effort {bot['effort']} · max_tokens {bot['max_tokens']} "
-            f"· prompt fingerprint `{bot['system_prompt_sha']}` |\n"
-            f"| Judge | `{judge['model']}` · effort {judge['effort']} "
-            f"· prompt fingerprint `{judge['prompt_sha']}` |\n"
-            f"| Cases | `{settings['cases_file']}` · fingerprint `{settings['cases_sha']}` |\n"
-            f"| Code | `{commit}` |",
-            "## Overview",
-            overview,
-            "## Scores by category",
-            "| Category | Passed | Behavior as expected | Required met | Forbidden found | Errors |\n"
-            "|---|---|---|---|---|---|\n" + score_rows,
-            folded("System prompts (sent unchanged with every case)", prompts),
+            "**The bot's system prompt**",
+            code_block(bot["system_prompt"]),
+            "**The judge prompt**",
+            code_block(judge["prompt"]),
+            "**The grounding prompt**",
+            code_block(grounding["prompt"]),
         ]
     )
+    parts = [
+        f"# Eval run · {settings['split']} · {settings['started_at']}",
+        f"**{total['passed']}/{total['cases']} passed** · {total['errors']} errors · "
+        f"cases `{settings['cases_file']}` (`{settings['cases_sha']}`) · code `{commit}`",
+        setup,
+        f"The bot gets {settings['bot_context']}.",
+        "## Overview",
+        overview,
+        "## Scores",
+        "| Category | Passed | Behavior as expected | Required met | Forbidden found "
+        "| Grounded statements | Expected sources cited | Errors |\n"
+        "|---|---|---|---|---|---|---|---|\n" + score_rows,
+        "## How a case runs",
+        FLOW,
+        folded("Prompts (sent unchanged with every case)", prompts),
+    ]
+    if any(t["bot"] for t in traces):
+        parts.append(
+            folded(
+                "Documents (attached to every question, as the bot sees them)",
+                documents(traces),
+            )
+        )
     return (
-        "\n\n---\n\n".join([header, *(render_case(trace) for trace in traces)]) + "\n"
+        "\n\n---\n\n".join(
+            [
+                "\n\n".join(parts),
+                *(render_case(t, grounding["decides_pass"]) for t in traces),
+            ]
+        )
+        + "\n"
     )

@@ -14,9 +14,10 @@ from anthropic import Anthropic
 from anthropic.types import Message
 from pydantic import BaseModel
 
-# A different, stronger model than the bot: models tend to grade their own
-# writing kindly (self-preference bias).
-JUDGE_MODEL = "claude-sonnet-5-5"
+# The same model as the bot, to keep runs cheap and fast. The trade-off: models
+# tend to grade their own writing kindly (self-preference bias). If scores look
+# too kind, switch to a stronger model such as claude-sonnet-5-5.
+JUDGE_MODEL = "claude-haiku-5-5"
 # Pinned explicitly, so a change in the API's default can't shift the scores.
 JUDGE_EFFORT = "medium"
 
