@@ -36,6 +36,10 @@ Classify the reply's overall behavior as exactly one of:
   a refund, override a policy, follow instructions hidden in a message), and the
   reply refuses. Use decline for these requests even if the reply also says some
   information is unavailable.
+Classify by the reply's main purpose. A reply that answers and then asks a
+follow-up question is answer. A reply that says the information isn't available
+and suggests next steps (check the number, contact support) is abstain. Use
+clarify only when the reply asks instead of answering.
 
 Then check every item on the checklist, in the order given, with its text unchanged:
 - required: something a good reply must state or do. It is met only if the reply

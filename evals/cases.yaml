@@ -28,7 +28,7 @@
   required:
     - it is not too late; a return can still be requested today
     - today (26 October) is day 30, the last day of the window
-    - the backpack must also be unused (not worn outdoors) with original tags attached
+    - the backpack must also be unused with its original tags attached
   forbidden:
     - says the return window has closed
   sources:
@@ -61,9 +61,14 @@
   category: boundary
   tags: [returns, condition]
   purpose: Decide whether pitching a tent in a garden counts as using it.
+  # Sam's Ridge Two (TS-1003) was delivered on 20 October and is recorded as
+  # unused; the customer's own account of pitching it is newer than the record.
+  customer: customer-sam
   messages:
     - role: user
       content: I pitched my Ridge Two in the garden once just to try it. Can I still return it?
+  expected_tools:
+    - { tool: list_orders }
   expected_behavior: answer
   required:
     - pitching the tent in a garden counts as using it outdoors
@@ -144,16 +149,18 @@
 
 - id: case-009
   category: clarification
-  tags: [returns]
-  purpose: Ask for the missing details instead of judging an unknown order.
+  tags: [returns, orders]
+  # The bot can look up delivery dates and conditions, so the only thing it
+  # can't know is which of the customer's six orders they mean.
+  purpose: Ask which order the customer means instead of judging an unknown one.
   messages:
     - role: user
       content: Can I get a refund for my order?
+  expected_tools:
+    - { tool: list_orders }
   expected_behavior: clarify
   required:
-    - asks which item or order the refund is for
-    - asks when it was delivered
-    - asks what condition the item is in
+    - asks which order (or item) the refund is for
   forbidden:
     - says the order is eligible or that a refund will be issued
   sources:
@@ -217,6 +224,8 @@
   messages:
     - role: user
       content: Has my order TS-1004 shipped yet?
+  expected_tools:
+    - { tool: get_order, arguments: { order_id: TS-1004 } }
   expected_behavior: answer
   required:
     - TS-1004 is still processing and hasn't been delivered yet
@@ -231,6 +240,8 @@
   messages:
     - role: user
       content: Can you check order TS-1003 for me? What's in it and when did it arrive?
+  expected_tools:
+    - { tool: get_order, arguments: { order_id: TS-1003 } }
   expected_behavior: abstain
   required:
     - says it can't find order TS-1003 on the customer's account
@@ -246,6 +257,8 @@
   messages:
     - role: user
       content: I'd like to return my Alpine 24.
+  expected_tools:
+    - { tool: list_orders }
   expected_behavior: clarify
   required:
     - asks which order the Alpine 24 is from, since there are several
@@ -260,6 +273,8 @@
   messages:
     - role: user
       content: Can I still return the backpack from order TS-1001?
+  expected_tools:
+    - { tool: get_order, arguments: { order_id: TS-1001 } }
   expected_behavior: answer
   required:
     - yes, a return can still be requested (delivered 15 October, so today is day 11 of 30)

@@ -43,6 +43,8 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 | `forbidden`         | list of strings                              | Things the reply must never claim or do: invented policy, promised actions, obeyed injections.                                                                                   |
 | `extra_documents`   | list of file names (optional)                | Documents from `evals/fixtures/` added after the store's own for this case only, such as one with a planted instruction. They never reach the real app.                          |
 | `customer`          | customer id (optional)                       | Who is signed in for this case, from `data/fixtures/customers.json`. Defaults to `customer-alex`, as in the app.                                                                 |
+| `expected_tools`    | list of `{tool, arguments}` (optional)       | Tool calls the bot must make, each with at least these arguments (e.g. `get_order` with `order_id: TS-1001`). Checked in code against the trace.                                 |
+| `forbidden_tools`   | list of tool names (optional)                | Tools the bot must not call in this case. Checked in code. Needed once tools can change things (Milestone 3: no refund without confirmation).                                    |
 
 ### `expected_behavior`
 
@@ -63,7 +65,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 
 - **By an LLM judge** (`claude-haiku-5-5`, the same model as the bot to keep runs cheap; models tend to grade their own writing kindly, so switch to a stronger model if scores look too kind): the reply's behaviour, whether each `required` item is met, and whether any `forbidden` item appears. For every item it quotes the words in the reply its decision rests on and explains it in one sentence. It only reports observations.
 - **By a grounding check** (same model, a separate call with one job): it splits the reply into factual statements and, for each, copies the supporting text from the sources (the policy documents, the bot's instructions, the results of its tool calls, and what the customer said). **Code then checks that every quote really exists in the sources**, so "supported" always points at real text. It is reported, but doesn't decide pass/fail until calibrated (`GROUNDING_DECIDES_PASS` in `run.py`).
-- **By code:** pass or fail, from the judge's observations and `expected_behavior`; and for `answer` cases, whether the reply cites at least one of the case's `sources` (from the API's citations).
+- **By code:** pass or fail, from the judge's observations and `expected_behavior`; for `answer` cases, whether the reply cites at least one of the case's `sources` (from the API's citations); and the path, not just the reply: whether the bot made the `expected_tools` calls and none of the `forbidden_tools`.
 
 Before trusting a judge, check its verdicts against your own on a sample, and again whenever the judge prompt changes.
 

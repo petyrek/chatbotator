@@ -88,6 +88,8 @@ def result_line(case: dict[str, Any], result: dict[str, Any]) -> str:
         parts.append(
             f"expected sources cited {m['sources_cited']}/{m['sources_total']}"
         )
+    if m["tool_checks_total"]:
+        parts.append(f"tool checks {m['tool_checks_ok']}/{m['tool_checks_total']}")
     return " · ".join(parts)
 
 
@@ -148,7 +150,10 @@ def evidence(check: dict[str, Any]) -> str:
 
 
 def checks_table(
-    case: dict[str, Any], verdict: dict[str, Any], bot: dict[str, Any]
+    case: dict[str, Any],
+    verdict: dict[str, Any],
+    bot: dict[str, Any],
+    tool_checks: list[dict[str, Any]],
 ) -> str:
     behavior_ok = verdict["behavior"] == case["expected_behavior"]
     rows = [
@@ -177,6 +182,16 @@ def checks_table(
             f"| Sources | {', '.join(expected)} | {result} "
             f"| Checked in code: an answer must cite at least one of these. "
             f"Cited: {', '.join(hit or sorted(cited)) or 'nothing'}. |"
+        )
+    runs = [run for step in bot["steps"] for run in step["tool_runs"]]
+    made = " · ".join(f"`{run['name']} {json.dumps(run['arguments'])}`" for run in runs)
+    for check in tool_checks:
+        called = check["ok"] if check["kind"] == "expected" else not check["ok"]
+        rule = "calls" if check["kind"] == "expected" else "never calls"
+        rows.append(
+            f"| Tools | {rule} `{check['call']}` "
+            f"| {OK if check['ok'] else NOT_OK} {'called' if called else 'not called'} "
+            f"| Checked in code. The bot called: {made or 'no tools'}. |"
         )
     return "\n".join(rows)
 
@@ -403,7 +418,7 @@ def render_case(trace: dict[str, Any], grounding_decides_pass: bool) -> str:
         parts += ["**Error, so the case was not graded:**", code_block(result["error"])]
     else:
         parts += [
-            checks_table(case, trace["judge"]["verdict"], bot),
+            checks_table(case, trace["judge"]["verdict"], bot, result["tool_checks"]),
             grounding_table(trace["grounding"], grounding_decides_pass),
         ]
         decision = "**Decision** (code, `grade` in run.py): "
@@ -483,7 +498,8 @@ def render_markdown(
         f"| {row['required_met']}/{row['required_total']} "
         f"| {row['forbidden_detected']}/{row['forbidden_total']} "
         f"| {row['statements_supported']}/{row['statements_total']} "
-        f"| {row['sources_cited']}/{row['sources_total']} | {row['errors']} |"
+        f"| {row['sources_cited']}/{row['sources_total']} "
+        f"| {row['tool_checks_ok']}/{row['tool_checks_total']} | {row['errors']} |"
         for category, row in scores.items()
     )
     prompts = "\n\n".join(
@@ -506,8 +522,8 @@ def render_markdown(
         overview,
         "## Scores",
         "| Category | Passed | Behavior as expected | Required met | Forbidden found "
-        "| Grounded statements | Expected sources cited | Errors |\n"
-        "|---|---|---|---|---|---|---|---|\n" + score_rows,
+        "| Grounded statements | Expected sources cited | Tool checks | Errors |\n"
+        "|---|---|---|---|---|---|---|---|---|\n" + score_rows,
         "## How a case runs",
         FLOW,
         folded("Prompts (sent unchanged with every case)", prompts),

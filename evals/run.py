@@ -32,6 +32,7 @@ from report import render_markdown, result_line
 from chatbotator.assistant import reply as bot
 from chatbotator.assistant.citations import Citation
 from chatbotator.assistant.prompt import SYSTEM_PROMPT
+from chatbotator.assistant.tools import ToolRun
 from chatbotator.customers import CUSTOMERS
 from chatbotator.policies import DOCUMENTS, Document, parse_document
 
@@ -141,12 +142,41 @@ def cited_sources(citations: list[Citation]) -> set[tuple[str, str]]:
     return {(c.document, c.section) for c in citations}
 
 
+def tool_call_label(tool: str, arguments: dict[str, Any]) -> str:
+    """e.g. 'get_order {"order_id": "TS-1001"}', or just 'list_orders'."""
+    return f"{tool} {json.dumps(arguments)}" if arguments else tool
+
+
+def tool_checks(case: dict[str, Any], runs: list[ToolRun]) -> list[dict[str, Any]]:
+    """Checks the path, not just the reply: which tools the bot called.
+
+    `expected_tools`: each call must happen, with at least these arguments.
+    `forbidden_tools`: these tools must not be called at all.
+    """
+    checks = []
+    for expected in case.get("expected_tools", []):
+        wanted = expected.get("arguments", {})
+        called = any(
+            run.name == expected["tool"]
+            and isinstance(run.arguments, dict)
+            and all(run.arguments.get(key) == value for key, value in wanted.items())
+            for run in runs
+        )
+        label = tool_call_label(expected["tool"], wanted)
+        checks.append({"kind": "expected", "call": label, "ok": called})
+    for name in case.get("forbidden_tools", []):
+        called = any(run.name == name for run in runs)
+        checks.append({"kind": "forbidden", "call": name, "ok": not called})
+    return checks
+
+
 def grade(
     case: dict[str, Any],
     verdict: Verdict,
     stop_reason: str | None,
     citations: list[Citation],
     grounding: GroundingResult,
+    tools: list[dict[str, Any]],
 ) -> list[str]:
     """Returns the reasons the case failed; an empty list means it passed.
     The judge only reports observations; pass/fail is decided here, in code."""
@@ -181,6 +211,10 @@ def grade(
     if case["expected_behavior"] == "answer" and expected:
         if not expected & cited_sources(citations):
             problems.append("cites none of the expected sources")
+    # Also in code: the tool calls the case expects or forbids (tool_checks).
+    for check in tools:
+        if not check["ok"]:
+            problems.append(f"tool call, {check['kind']}: {check['call']}")
     return problems
 
 
@@ -189,6 +223,7 @@ def metrics(
     verdict: Verdict,
     citations: list[Citation],
     grounding: GroundingResult,
+    tools: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Partial credit, reported next to the strict pass/fail."""
     expected = expected_sources(case)
@@ -203,6 +238,8 @@ def metrics(
         "statements_total": len(grounding.statements),
         "sources_cited": len(expected & cited_sources(citations)),
         "sources_total": len(expected),
+        "tool_checks_ok": sum(check["ok"] for check in tools),
+        "tool_checks_total": len(tools),
     }
 
 
@@ -278,13 +315,21 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         ]
 
         # Step 4: code decides pass or fail.
+        runs = [run for step in reply.steps for run in step.tool_runs]
+        tools = tool_checks(case, runs)
         problems = grade(
-            case, judged.verdict, reply.response.stop_reason, reply.citations, grounding
+            case,
+            judged.verdict,
+            reply.response.stop_reason,
+            reply.citations,
+            grounding,
+            tools,
         )
         trace["result"] = {
             "status": "failed" if problems else "passed",
             "problems": problems,
-            "metrics": metrics(case, judged.verdict, reply.citations, grounding),
+            "tool_checks": tools,
+            "metrics": metrics(case, judged.verdict, reply.citations, grounding, tools),
         }
     except Exception:  # a broken case is recorded as an error, not a failure
         trace["result"] = {
@@ -301,6 +346,7 @@ def summarize(traces: list[dict[str, Any]]) -> dict[str, Any]:
     counted += ["forbidden_detected", "forbidden_total"]
     counted += ["statements_supported", "statements_total"]
     counted += ["sources_cited", "sources_total"]
+    counted += ["tool_checks_ok", "tool_checks_total"]
     rows: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for trace in traces:
         result = trace["result"]
@@ -317,8 +363,8 @@ def summarize(traces: list[dict[str, Any]]) -> dict[str, Any]:
 
 def print_summary(scores: dict[str, Any]) -> None:
     columns = ["category", "passed", "behavior", "required", "forbidden", "grounded"]
-    columns += ["sources", "errors"]
-    line = "  {:<14} {:>7} {:>9} {:>9} {:>10} {:>12} {:>8} {:>7}"
+    columns += ["sources", "tools", "errors"]
+    line = "  {:<14} {:>7} {:>9} {:>9} {:>10} {:>12} {:>8} {:>6} {:>7}"
     print("\n" + line.format(*columns))
     for category, row in scores.items():
         graded = row["cases"] - row["errors"]
@@ -331,6 +377,7 @@ def print_summary(scores: dict[str, Any]) -> None:
                 f"{row['forbidden_detected']}/{row['forbidden_total']}",
                 f"{row['statements_supported']}/{row['statements_total']}",
                 f"{row['sources_cited']}/{row['sources_total']}",
+                f"{row['tool_checks_ok']}/{row['tool_checks_total']}",
                 row["errors"],
             )
         )
