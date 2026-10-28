@@ -32,10 +32,13 @@ src/chatbotator/      The importable package. src/ keeps tests importing the
                       to HTTP errors
   assistant/          Everything about talking to the model
     prompt.py         The system prompt
-    reply.py          The model and its settings, and the call: attaches the
-                      documents, returns the reply
+    reply.py          The model and its settings, and the bounded loop of
+                      model calls and tool calls that produces a reply
+    tools.py          The tools the model can call: schemas, validation, running
     citations.py      Turns the model's citations into policy lines
   policies.py         Loads data/knowledge/*.md into titles and passages
+  customers.py        current_customer(): who is signed in (set by the server)
+  orders.py           The fixture orders, looked up per customer
 tests/                pytest: test_<package>_<module>.py per module, e.g.
                       test_routes_chat.py, test_assistant_reply.py
 ```
@@ -43,10 +46,8 @@ tests/                pytest: test_<package>_<module>.py per module, e.g.
 Planned for milestones 2 and 3, so new code has an obvious home:
 
 ```text
-  customers.py        M2: current_customer(), who is signed in (set by the server)
-  orders.py           M2: order data and return eligibility, computed in code
+  orders.py           M2: return eligibility, computed in code
                       (becomes an orders/ package if eligibility grows)
-  assistant/tools.py  M2: tool schemas, argument validation, dispatch
   routes/refunds.py   M3: the endpoint that confirms a refund proposal
   refunds/            M3: proposals and executing them; db.py holds SQLite
 ```

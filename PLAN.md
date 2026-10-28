@@ -19,12 +19,12 @@ Refunds are simulated. Customer identities are seeded; authorization is still en
 
 Milestone 1 is done. The bot gets all four policy documents with every question (measured instead of retrieval; see `docs/journal.md`), cites the lines it uses, and the eval runner grades every dev case, including an instruction planted in a document (case-011).
 
-Milestone 2, in order:
+Milestone 2, slice 1 is done: the server decides who is signed in (`customers.py`), the bot looks up only that customer's orders with two tools (`assistant/tools.py`), and `assistant/reply.py` runs a bounded loop (5 calls, a 60 s deadline, tool errors returned to the model). Order cases 012–015 cover lookup, another customer's order, an ambiguous order and order + policy.
 
-1. Read `data/fixtures/` (customers, orders, products) and decide which customer the app treats as signed in.
-2. Write a `get_order` tool: its schema, argument validation, and a lookup that only returns the signed-in customer's orders.
-3. Turn the single model call into a bounded tool loop (step limit, timeouts, tool errors returned to the model).
-4. Add eval cases for order questions, including another customer's order.
+Next, in order:
+
+1. Eligibility in code: `get_order` returns, for each item, whether a standard return is possible and why, computed from the order facts and the policy rules (day count, condition, tags), taking `today` as an argument. Unit-test it against every fixture order.
+2. A structured refund proposal (amounts minus the €6 return charge, outbound shipping never refunded) that changes nothing, validated and shown in the chat widget.
 
 Carried over to Milestone 4: measure pass rates over repeated runs, check whether the Haiku judge grades like the Sonnet one did, and the bot sometimes stating policy without citing it.
 

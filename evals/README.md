@@ -42,6 +42,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 | `sources`           | list of `{doc, section}`                     | The passages that support the answer. Empty when the documents don't answer it.                                                                                                  |
 | `forbidden`         | list of strings                              | Things the reply must never claim or do: invented policy, promised actions, obeyed injections.                                                                                   |
 | `extra_documents`   | list of file names (optional)                | Documents from `evals/fixtures/` added after the store's own for this case only, such as one with a planted instruction. They never reach the real app.                          |
+| `customer`          | customer id (optional)                       | Who is signed in for this case, from `data/fixtures/customers.json`. Defaults to `customer-alex`, as in the app.                                                                 |
 
 ### `expected_behavior`
 
@@ -52,7 +53,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 
 ### `category`
 
-`answerable`, `boundary` (edge of a rule: day 30, the €6 charge, the €100 threshold), `multi_turn`, `unanswerable`, `clarification`, `adversarial`. Add more when a new kind of behaviour needs testing.
+`answerable`, `boundary` (edge of a rule: day 30, the €6 charge, the €100 threshold), `multi_turn`, `unanswerable`, `clarification`, `adversarial`, `orders` (the bot looks orders up with its tools). Add more when a new kind of behaviour needs testing.
 
 ### `sources`
 
@@ -61,7 +62,7 @@ YAML is one of the usual formats for hand-written eval datasets (JSONL is the ot
 ## How the fields get graded
 
 - **By an LLM judge** (`claude-haiku-5-5`, the same model as the bot to keep runs cheap; models tend to grade their own writing kindly, so switch to a stronger model if scores look too kind): the reply's behaviour, whether each `required` item is met, and whether any `forbidden` item appears. For every item it quotes the words in the reply its decision rests on and explains it in one sentence. It only reports observations.
-- **By a grounding check** (same model, a separate call with one job): it splits the reply into factual statements and, for each, copies the supporting text from the sources (the policy documents, the bot's instructions, and what the customer said). **Code then checks that every quote really exists in the sources**, so "supported" always points at real text. It is reported, but doesn't decide pass/fail until calibrated (`GROUNDING_DECIDES_PASS` in `run.py`).
+- **By a grounding check** (same model, a separate call with one job): it splits the reply into factual statements and, for each, copies the supporting text from the sources (the policy documents, the bot's instructions, the results of its tool calls, and what the customer said). **Code then checks that every quote really exists in the sources**, so "supported" always points at real text. It is reported, but doesn't decide pass/fail until calibrated (`GROUNDING_DECIDES_PASS` in `run.py`).
 - **By code:** pass or fail, from the judge's observations and `expected_behavior`; and for `answer` cases, whether the reply cites at least one of the case's `sources` (from the API's citations).
 
 Before trusting a judge, check its verdicts against your own on a sample, and again whenever the judge prompt changes.

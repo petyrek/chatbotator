@@ -47,8 +47,10 @@ apps/web/src/
 apps/api/src/chatbotator/
   main.py            Creates the FastAPI app
   routes/            HTTP endpoints: health, chat
-  assistant/         The model call, its system prompt and citations
+  assistant/         The model/tool loop, system prompt, tools and citations
   policies.py        Loads the policy documents
+  customers.py       Who is signed in (set by the server)
+  orders.py          The fixture orders, per customer
                      (full layout, including M2/M3: apps/api/README.md)
 apps/api/tests/      pytest
 apps/api/README.md   Python for TypeScript developers

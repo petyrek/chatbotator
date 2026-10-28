@@ -26,8 +26,8 @@ export type ChatResponse = { reply: string; citations: Citation[] };
 // The longest conversation the API accepts (max_length in ChatRequest).
 export const MAX_CHAT_MESSAGES = 50;
 
-// The API gives up on the model after 30 s and retries once, so 65 s is enough
-// for its worst case; after that, stop waiting.
+// The API gives up on a turn after 60 s (TURN_DEADLINE_S in assistant/reply.py),
+// so 65 s covers its worst case; after that, stop waiting.
 const CHAT_TIMEOUT_MS = 65_000;
 
 // Sends the whole conversation (the API is stateless) and returns the reply

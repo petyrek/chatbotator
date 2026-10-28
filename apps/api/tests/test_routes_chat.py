@@ -10,7 +10,8 @@ from anthropic.types import Message, MessageParam
 from fastapi.testclient import TestClient
 
 from chatbotator.assistant.citations import Citation
-from chatbotator.assistant.reply import ReplyResult
+from chatbotator.assistant.reply import ReplyResult, Step
+from chatbotator.customers import Customer
 from chatbotator.main import app
 
 # The module itself, so tests can replace the generate_reply it calls.
@@ -28,9 +29,8 @@ def fake_result(text: str, stop_reason: str = "end_turn") -> ReplyResult:
     # model_construct() builds a Message without validation; the route only
     # reads its stop_reason.
     response = Message.model_construct(stop_reason=stop_reason)
-    return ReplyResult(
-        text=text, citations=[CITATION], request={}, response=response, latency_s=0.0
-    )
+    step = Step(request={}, response=response, latency_s=0.0, tool_runs=[])
+    return ReplyResult(text=text, citations=[CITATION], steps=[step])
 
 
 @pytest.fixture
@@ -38,7 +38,9 @@ def fake_model(monkeypatch: pytest.MonkeyPatch) -> list[list[MessageParam]]:
     """Replaces the model call with a fake that records what it was sent."""
     calls: list[list[MessageParam]] = []
 
-    def fake_generate_reply(messages: list[MessageParam]) -> ReplyResult:
+    def fake_generate_reply(
+        messages: list[MessageParam], customer: Customer
+    ) -> ReplyResult:
         calls.append(messages)
         return fake_result("Fake reply")
 
@@ -91,7 +93,9 @@ def test_rejects_invalid_conversations(
 
 
 def fail_with(monkeypatch: pytest.MonkeyPatch, error: Exception) -> None:
-    def failing_generate_reply(messages: list[MessageParam]) -> ReplyResult:
+    def failing_generate_reply(
+        messages: list[MessageParam], customer: Customer
+    ) -> ReplyResult:
         raise error
 
     monkeypatch.setattr(chat_route, "generate_reply", failing_generate_reply)
@@ -141,7 +145,9 @@ def test_incomplete_reply_is_not_a_success(
     monkeypatch: pytest.MonkeyPatch, text: str, stop_reason: str
 ) -> None:
     monkeypatch.setattr(
-        chat_route, "generate_reply", lambda messages: fake_result(text, stop_reason)
+        chat_route,
+        "generate_reply",
+        lambda messages, customer: fake_result(text, stop_reason),
     )
 
     response = client.post("/api/chat", json=HELLO)
@@ -164,3 +170,22 @@ def test_long_assistant_replies_can_be_sent_back(
     response = client.post("/api/chat", json={"messages": conversation})
 
     assert response.status_code == 200
+
+
+def test_the_server_decides_who_is_signed_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[Customer] = []
+
+    def fake_generate_reply(
+        messages: list[MessageParam], customer: Customer
+    ) -> ReplyResult:
+        seen.append(customer)
+        return fake_result("Fake reply")
+
+    monkeypatch.setattr(chat_route, "generate_reply", fake_generate_reply)
+    # A customer id in the body is not part of ChatRequest, so it is ignored.
+    body = {**HELLO, "customerId": "customer-sam"}
+
+    response = client.post("/api/chat", json=body)
+
+    assert response.status_code == 200
+    assert [customer.id for customer in seen] == ["customer-alex"]

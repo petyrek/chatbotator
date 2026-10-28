@@ -2,14 +2,15 @@
 and turns model failures into errors the chat widget can show."""
 
 import logging
-from typing import Literal
+from typing import Annotated, Literal
 
 import anthropic
 from anthropic.types import MessageParam
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from chatbotator.assistant.reply import ReplyResult, generate_reply
+from chatbotator.customers import Customer, current_customer
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -74,14 +75,18 @@ def to_response(result: ReplyResult) -> ChatResponse:
 
 
 # FastAPI validates the JSON body into ChatRequest (422 if invalid) and turns
-# the returned ChatResponse into JSON.
+# the returned ChatResponse into JSON. `Depends(current_customer)` makes FastAPI
+# call current_customer() and pass in who is signed in: the server decides, not
+# the request body.
 @router.post("/api/chat")
-def post_chat(request: ChatRequest) -> ChatResponse:
+def post_chat(
+    request: ChatRequest, customer: Annotated[Customer, Depends(current_customer)]
+) -> ChatResponse:
     history = [to_model_message(message) for message in request.messages]
     # Each SDK error becomes a message that is safe to show the customer; the
     # details go only to the server log (and never the API key).
     try:
-        result = generate_reply(history)
+        result = generate_reply(history, customer)
     except anthropic.AuthenticationError as error:
         logger.error("Model call rejected: check ANTHROPIC_API_KEY in .env")
         raise HTTPException(

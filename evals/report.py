@@ -16,12 +16,13 @@ FLOW = """\
 | # | From → to | What travels |
 |---|---|---|
 | ① | Browser → API | `POST /api/chat`: the conversation so far |
-| ② | API → Anthropic | the conversation, with all policy documents attached to the latest message, plus the bot's system prompt |
-| ③ | Anthropic → API | the bot's reply as text blocks; the blocks that rest on a document carry citations |
+| ② | API → Anthropic | the conversation, with all policy documents attached to the latest message, plus the bot's system prompt and its tools |
+| ③ | Anthropic → API | either tool calls (`stop_reason: tool_use`), or the reply as text blocks, where the blocks that rest on a document carry citations |
+| ②③ | (repeats) | after tool calls, the API runs the tools for the signed-in customer and repeats ② with the model's response and the results added; at most 5 calls |
 | ④ | API → Browser | the reply and the policy lines it cites |
 | ⑤ | Eval → Anthropic | the judge gets the conversation, the reply and the case's checklist |
 | ⑥ | Anthropic → Eval | the judge's verdict, as JSON |
-| ⑦ | Eval → Anthropic | the grounding check gets the reply and everything the bot had |
+| ⑦ | Eval → Anthropic | the grounding check gets the reply and everything the bot had, including its tool results |
 | ⑧ | Anthropic → Eval | each statement in the reply, with the source text that supports it |
 
 Then code decides pass or fail (`grade` in run.py). The evals call the same code
@@ -113,6 +114,12 @@ def reply_with_markers(response: dict[str, Any]) -> tuple[str, list[str]]:
     return text, notes
 
 
+def tool_call(run: dict[str, Any]) -> str:
+    """e.g. `get_order({"order_id": "TS-1001"})` ✓, or ✗ with the error."""
+    call = f"`{run['name']}({json.dumps(run['arguments'])})`"
+    return f"{call} {NOT_OK} {run['output']}" if run["is_error"] else f"{call} {OK}"
+
+
 def conversation(case: dict[str, Any], bot: dict[str, Any] | None) -> str:
     lines = []
     for message in case["messages"]:
@@ -121,7 +128,10 @@ def conversation(case: dict[str, Any], bot: dict[str, Any] | None) -> str:
         else:
             lines.append(f"**Assistant** *(fixed test history)*: {message['content']}")
     if bot is not None:
-        text, notes = reply_with_markers(bot["response"])
+        runs = [run for step in bot["steps"] for run in step["tool_runs"]]
+        if runs:
+            lines.append("**Bot's tool calls:** " + " · ".join(map(tool_call, runs)))
+        text, notes = reply_with_markers(bot["steps"][-1]["response"])
         lines.append(f"**Bot (this run):** {text}")
         lines.append("\n".join(f"- {note}" for note in notes) or "*Cited nothing.*")
     return quote("\n\n".join(lines))
@@ -240,6 +250,7 @@ def bot_request(request: dict[str, Any]) -> dict[str, Any]:
         **request,
         "system": "‹the bot's system prompt, see Prompts›",
         "messages": messages,
+        "tools": "‹the tool definitions, see Tools›",
     }
 
 
@@ -260,6 +271,37 @@ def hop(title: str, value: Any, note: str = "") -> str:
     return f"{heading}\n\n{json_block(value)}"
 
 
+def bot_steps(steps: list[dict[str, Any]]) -> list[str]:
+    """② and ③ for each model call. After the first, a request is the previous
+    one plus two messages (the model's tool calls and our results), so only
+    those two are shown."""
+    hops = []
+    for number, step in enumerate(steps, start=1):
+        label = f" · call {number} of {len(steps)}" if len(steps) > 1 else ""
+        request = bot_request(step["request"])
+        if number == 1:
+            hops.append(
+                hop(f"② API → Anthropic{label} · client.messages.create(…)", request)
+            )
+        else:
+            added = {
+                "‹…›": f"‹the request of call {number - 1}, with these messages added›",
+                "messages": tidy(request["messages"][-2:]),
+            }
+            hops.append(hop(f"② API → Anthropic{label}", added))
+        note = f"{step['latency_s']:.1f} s"
+        if step["response"]["stop_reason"] == "tool_use":
+            note += " · asks for tools: the API runs them and calls the model again"
+        hops.append(
+            hop(
+                f"③ Anthropic → API{label}",
+                compact_response(step["response"], decode_text=False),
+                note,
+            )
+        )
+    return hops
+
+
 def data_flow(trace: dict[str, Any]) -> str:
     api, bot, judge, grounding = (
         trace["api"],
@@ -276,17 +318,7 @@ def data_flow(trace: dict[str, Any]) -> str:
     if api:
         hops.append(hop("① Browser → API · POST /api/chat", api["request"]))
     if bot:
-        hops += [
-            hop(
-                "② API → Anthropic · client.messages.create(…)",
-                bot_request(bot["request"]),
-            ),
-            hop(
-                "③ Anthropic → API",
-                compact_response(bot["response"], decode_text=False),
-                f"{bot['latency_s']:.1f} s",
-            ),
-        ]
+        hops += bot_steps(bot["steps"])
     if api:
         status = api["status"]
         note = (
@@ -335,10 +367,10 @@ def data_flow(trace: dict[str, Any]) -> str:
                 f"{grounding['latency_s']:.1f} s · {answer}",
             ),
         ]
-    calls = [record for record in (bot, judge, grounding) if record]
-    seconds = sum(record["latency_s"] for record in calls)
-    tokens_in = sum(record["response"]["usage"]["input_tokens"] for record in calls)
-    tokens_out = sum(record["response"]["usage"]["output_tokens"] for record in calls)
+    calls = [*(bot["steps"] if bot else []), *(r for r in (judge, grounding) if r)]
+    seconds = sum(call["latency_s"] for call in calls)
+    tokens_in = sum(call["response"]["usage"]["input_tokens"] for call in calls)
+    tokens_out = sum(call["response"]["usage"]["output_tokens"] for call in calls)
     summary = (
         f"Data flow: every JSON sent and received, in order · {len(calls)} model "
         f"calls · {seconds:.1f} s · {tokens_in:,} input / {tokens_out:,} output tokens"
@@ -394,7 +426,9 @@ def search_results(
 ) -> list[tuple[int, dict[str, Any]]]:
     """The documents the bot got in this case, with the search_result_index that
     citations use: the store's own (extra=False), or the ones this case added."""
-    blocks = trace["bot"]["request"]["messages"][-1]["content"]
+    # The documents are attached to the customer's message, the last one in the
+    # first call's request.
+    blocks = trace["bot"]["steps"][0]["request"]["messages"][-1]["content"]
     results = [b for b in blocks if b["type"] == "search_result"]
     added = trace["case"].get("extra_documents", [])
     return [(i, r) for i, r in enumerate(results) if (r["source"] in added) == extra]
@@ -479,6 +513,13 @@ def render_markdown(
         folded("Prompts (sent unchanged with every case)", prompts),
     ]
     if any(t["bot"] for t in traces):
+        first = next(t for t in traces if t["bot"])
+        parts.append(
+            folded(
+                "Tools (sent with every call to the bot; reply.py runs them)",
+                json_block(first["bot"]["steps"][0]["request"]["tools"]),
+            )
+        )
         parts.append(
             folded(
                 "Documents (attached to every question, as the bot sees them)",

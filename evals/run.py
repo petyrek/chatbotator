@@ -18,6 +18,7 @@ import subprocess
 import sys
 import traceback
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from report import render_markdown, result_line
 from chatbotator.assistant import reply as bot
 from chatbotator.assistant.citations import Citation
 from chatbotator.assistant.prompt import SYSTEM_PROMPT
+from chatbotator.customers import CUSTOMERS
 from chatbotator.policies import DOCUMENTS, Document, parse_document
 
 # Deliberately from the HTTP layer: the evals replay the endpoint's own request
@@ -48,7 +50,10 @@ FIXTURES_DIR = EVALS_DIR / "fixtures"
 
 # What the bot can see besides the conversation. Update this when retrieval is
 # added, so every report says which setup produced it.
-BOT_CONTEXT = f"all {len(DOCUMENTS)} policy documents with every question, citations on"
+BOT_CONTEXT = (
+    f"all {len(DOCUMENTS)} policy documents with every question, citations on, "
+    "and order tools (list_orders, get_order) for the signed-in customer"
+)
 
 # Groundedness is reported, but doesn't decide pass/fail until its verdicts have
 # been checked against a human's on a sample (calibration).
@@ -100,6 +105,15 @@ def run_settings(split: str, cases_file: Path) -> dict[str, Any]:
             "decides_pass": GROUNDING_DECIDES_PASS,
         },
     }
+
+
+def total_usage(usages: Iterable[dict[str, Any]]) -> dict[str, int]:
+    """Token counts summed over the bot's model calls in one turn."""
+    total = {"input_tokens": 0, "output_tokens": 0}
+    for usage in usages:
+        for key in total:
+            total[key] += usage[key]
+    return total
 
 
 def call_record(
@@ -221,14 +235,28 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         request = ChatRequest.model_validate({"messages": case["messages"]})
         history = [to_model_message(message) for message in request.messages]
         documents = documents_for(case)
-        reply = bot.generate_reply(history, documents)
+        # Who is signed in: the case can choose; the app always uses Alex.
+        customer = CUSTOMERS[case.get("customer", "customer-alex")]
+        reply = bot.generate_reply(history, customer, documents)
         trace["api"] = {
             "request": request.model_dump(),
             # The endpoint answers 502 instead of an incomplete reply.
             "status": 200 if reply.is_complete else 502,
             "response": to_response(reply).model_dump(),
         }
-        trace["bot"] = call_record(reply.request, reply.response, reply.latency_s)
+        steps = [
+            {
+                **call_record(step.request, step.response, step.latency_s),
+                "tool_runs": [vars(run) for run in step.tool_runs],
+            }
+            for step in reply.steps
+        ]
+        tool_runs = [run for step in steps for run in step["tool_runs"]]
+        trace["bot"] = {
+            "steps": steps,  # one per model call; tools ran between them
+            "latency_s": round(sum(step["latency_s"] for step in steps), 2),
+            "usage": total_usage(step["response"]["usage"] for step in steps),
+        }
         trace["bot"]["reply"] = reply.text
         trace["bot"]["citations"] = [vars(c) for c in reply.citations]
 
@@ -238,9 +266,10 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         trace["judge"]["verdict"] = judged.verdict.model_dump()
 
         # Step 3: a second grader checks each statement against the sources (the
-        # documents, the bot's instructions and the conversation), and
+        # documents, the bot's instructions, its tool results and the
+        # conversation), and
         # code confirms every supporting quote really exists in them.
-        grounding = check_grounding(case["messages"], reply.text, documents)
+        grounding = check_grounding(case["messages"], reply.text, documents, tool_runs)
         trace["grounding"] = call_record(
             grounding.request, grounding.response, grounding.latency_s
         )
@@ -357,7 +386,7 @@ def main() -> None:
                     s: t[s]["latency_s"] for s in ("bot", "judge", "grounding") if t[s]
                 },
                 "usage": {
-                    s: t[s]["response"]["usage"]
+                    s: t[s].get("usage") or t[s]["response"]["usage"]
                     for s in ("bot", "judge", "grounding")
                     if t[s]
                 },

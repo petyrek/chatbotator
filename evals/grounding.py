@@ -25,8 +25,9 @@ from chatbotator.policies import DOCUMENTS, Document
 GROUNDING_PROMPT = """\
 You check whether a customer support reply is grounded in its sources. You get a
 JSON object with the sources (the store's policy documents, the assistant's
-instructions, and the conversation so far, where the customer may state facts such
-as a delivery date) and the reply.
+instructions, the results of the tools it called, such as the customer's order
+data, and the conversation so far, where the customer may state facts such as a
+delivery date) and the reply.
 
 1. Split the reply into individual factual statements: anything it states about the
    store, its policies, products, services, dates, prices, or what the assistant
@@ -102,7 +103,7 @@ def normalize(text: str) -> str:
 
 def quote_found(quote: str, sources: dict[str, Any]) -> bool:
     """Code's check on the grader: does the quote appear in what the bot had
-    (the documents, its instructions and the conversation)?"""
+    (the documents, its instructions, its tool results and the conversation)?"""
     source_text = normalize(json.dumps(sources, ensure_ascii=False).replace("\\n", " "))
     return bool(normalize(quote)) and normalize(quote) in source_text
 
@@ -111,12 +112,28 @@ client = Anthropic()
 
 
 def check_grounding(
-    conversation: list[Any], reply: str, documents: list[Document] = DOCUMENTS
+    conversation: list[Any],
+    reply: str,
+    documents: list[Document] = DOCUMENTS,
+    tool_runs: list[dict[str, Any]] | None = None,
 ) -> GroundingResult:
-    # `documents` are the ones the bot got, including any a case added. What the
-    # customer said counts as a source too: "delivered on 26 September" supports
-    # "today is the last day".
-    given: dict[str, Any] = {**sources(documents), "conversation": conversation}
+    # Everything the bot had: `documents` (including any a case added), the
+    # results of its tool calls, and what the customer said ("delivered on 26
+    # September" supports "today is the last day").
+    tool_results = [
+        {
+            "tool": run["name"],
+            "arguments": run["arguments"],
+            # Decoded, so quotes from it read as in the data, without escapes.
+            "result": run["output"] if run["is_error"] else json.loads(run["output"]),
+        }
+        for run in tool_runs or []
+    ]
+    given: dict[str, Any] = {
+        **sources(documents),
+        "tool_results": tool_results,
+        "conversation": conversation,
+    }
     material = {"sources": given, "reply": reply}
     request: dict[str, Any] = {
         "model": JUDGE_MODEL,
