@@ -51,6 +51,7 @@ apps/api/src/chatbotator/
   policies.py        Loads the policy documents
   customers.py       Who is signed in (set by the server)
   orders.py          The fixture orders, per customer
+  returns.py         Return eligibility, computed in code
                      (full layout, including M2/M3: apps/api/README.md)
 apps/api/tests/      pytest
 apps/api/README.md   Python for TypeScript developers

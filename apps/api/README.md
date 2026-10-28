@@ -39,6 +39,7 @@ src/chatbotator/      The importable package. src/ keeps tests importing the
   policies.py         Loads data/knowledge/*.md into titles and passages
   customers.py        current_customer(): who is signed in (set by the server)
   orders.py           The fixture orders, looked up per customer
+  returns.py          Whether each item can be returned, computed in code
 tests/                pytest: test_<package>_<module>.py per module, e.g.
                       test_routes_chat.py, test_assistant_reply.py
 ```
@@ -46,8 +47,6 @@ tests/                pytest: test_<package>_<module>.py per module, e.g.
 Planned for milestones 2 and 3, so new code has an obvious home:
 
 ```text
-  orders.py           M2: return eligibility, computed in code
-                      (becomes an orders/ package if eligibility grows)
   routes/refunds.py   M3: the endpoint that confirms a refund proposal
   refunds/            M3: proposals and executing them; db.py holds SQLite
 ```

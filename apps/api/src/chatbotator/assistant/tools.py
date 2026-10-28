@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from chatbotator.customers import Customer
 from chatbotator.orders import Order, find_order, orders_of
+from chatbotator.returns import check_return
+from chatbotator.settings import TODAY
 
 
 class ListOrdersInput(BaseModel):
@@ -48,8 +50,9 @@ TOOLS: list[ToolParam] = [
         "name": "get_order",
         "description": (
             "Gets one of the signed-in customer's orders by its number: status, "
-            "dates, shipping paid, and each item's price, condition and whether "
-            "its tags are attached."
+            "dates, shipping paid, each item's price, condition and tags, and "
+            "whether each item can be sent back as a standard return (decided "
+            "by the store's rules, with the reasons if not)."
         ),
         "input_schema": GetOrderInput.model_json_schema(),
     },
@@ -110,6 +113,7 @@ def summary(order: Order) -> dict[str, Any]:
 
 
 def details(order: Order) -> dict[str, Any]:
+    returns = check_return(order, TODAY)
     return {
         "order_id": order.id,
         "status": order.status,
@@ -122,7 +126,16 @@ def details(order: Order) -> dict[str, Any]:
                 "unit_price_eur": item.unit_price,
                 "condition": item.condition,
                 "tags_attached": item.tags_attached,
+                "standard_return": {
+                    "eligible": verdict.eligible,
+                    "reasons_not": verdict.reasons,
+                },
             }
-            for item in order.items
+            # zip pairs each item with its eligibility (same order, same length).
+            for item, verdict in zip(order.items, returns.items, strict=True)
         ],
+        "return_window": {
+            "day": returns.day,  # days since delivery; delivery day = 0
+            "last_day": returns.last_day.isoformat() if returns.last_day else None,
+        },
     }

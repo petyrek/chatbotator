@@ -21,10 +21,9 @@ Milestone 1 is done. The bot gets all four policy documents with every question 
 
 Milestone 2, slice 1 is done: the server decides who is signed in (`customers.py`), the bot looks up only that customer's orders with two tools (`assistant/tools.py`), and `assistant/reply.py` runs a bounded loop (5 calls, a 60 s deadline, tool errors returned to the model). Order cases 012–015 cover lookup, another customer's order, an ambiguous order and order + policy.
 
-Next, in order:
+Slice 2 is done: `returns.py` decides in code whether each item can be returned (window, recorded condition, tags), with `today` as an argument and a test per fixture order. `get_order` includes the result, and the prompt tells the model to report it and never contradict it. Cases 016–017 cover day 31 and a mixed order.
 
-1. Eligibility in code: `get_order` returns, for each item, whether a standard return is possible and why, computed from the order facts and the policy rules (day count, condition, tags), taking `today` as an argument. Unit-test it against every fixture order.
-2. A structured refund proposal (amounts minus the €6 return charge, outbound shipping never refunded) that changes nothing, validated and shown in the chat widget.
+Next: a structured refund proposal (each eligible item's price, minus one €6 return charge per request; outbound shipping never refunded) that changes nothing, validated in code and shown in the chat widget.
 
 Carried over to Milestone 4: measure pass rates over repeated runs, check whether the Haiku judge grades like the Sonnet one did, and the bot sometimes stating policy without citing it.
 

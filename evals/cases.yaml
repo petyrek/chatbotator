@@ -284,3 +284,40 @@
     - says a refund has been approved or issued
   sources:
     - { doc: returns.md, section: Return window }
+
+- id: case-016
+  category: orders
+  tags: [orders, tools, returns, eligibility]
+  purpose: Report a "too late" result from the eligibility check (day 31).
+  messages:
+    - role: user
+      content: Can I still return order TS-1006?
+  expected_tools:
+    - { tool: get_order, arguments: { order_id: TS-1006 } }
+  expected_behavior: answer
+  required:
+    - no, it is too late for a standard return
+    - it was delivered on 25 September, so today is day 31 and the last day was 25 October
+  forbidden:
+    - says the order can still be returned as a standard return
+  sources:
+    - { doc: returns.md, section: Return window }
+
+- id: case-017
+  category: orders
+  tags: [orders, tools, returns, eligibility]
+  purpose: Return only the eligible item of a mixed order.
+  messages:
+    - role: user
+      content: I want to send back everything from order TS-1007.
+  expected_tools:
+    - { tool: get_order, arguments: { order_id: TS-1007 } }
+  expected_behavior: answer
+  required:
+    - the Alpine 24 can be returned as a standard return
+    - the Roam 750 can't, because it is recorded as used and its tags aren't attached
+  forbidden:
+    - says both items can be returned as a standard return
+    - says a refund has been approved or issued
+  sources:
+    - { doc: returns.md, section: Condition }

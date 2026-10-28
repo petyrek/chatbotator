@@ -26,8 +26,10 @@ def test_get_order_returns_the_customers_order() -> None:
                 "unit_price_eur": 89,
                 "condition": "unused",
                 "tags_attached": True,
+                "standard_return": {"eligible": True, "reasons_not": []},
             }
         ],
+        "return_window": {"day": 11, "last_day": "2026-11-14"},
     }
 
 
